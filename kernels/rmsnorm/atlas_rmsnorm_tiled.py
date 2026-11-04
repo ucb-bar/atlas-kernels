@@ -3,6 +3,8 @@
 The pinned resident post-passes remain unchanged. This generator uses the same
 DRAM arena layout, but streams H tile rows and stages FP8 at the end of VMEM.
 """
+import math
+
 from atlas_epilogue import Epilogue
 from atlas_norm_postpass import _bits, _load_pair
 from atlas_program_checks import check_matrix_registers
@@ -27,13 +29,37 @@ def _dma_load(target, offset, size, label):
     return lines
 
 
-def standalone_source(rows, width, mask_offset, weight_offset, scale=-8):
+def epsilon_bits(eps):
+    """Round FP32 to BF16 ties-to-even, as vli.all's BF16 immediate requires.
+
+    Reject values that become zero, subnormal, or infinity in BF16. Decimal
+    epsilon need not be exact in BF16 (the historical 1e-5 is not exact).
+    """
+    if isinstance(eps, bool) or not isinstance(eps, (int, float)):
+        raise ValueError('RMSNorm eps must be positive and finite normal BF16 after rounding')
+    try:
+        valid = math.isfinite(eps) and eps > 0
+    except OverflowError:
+        valid = False
+    if not valid:
+        raise ValueError('RMSNorm eps must be positive and finite normal BF16 after rounding')
+    try:
+        bits = _bits(eps)
+    except (OverflowError, ValueError):
+        raise ValueError('RMSNorm eps must be representable as finite normal BF16') from None
+    if not 0x0080 <= bits < 0x7f80:
+        raise ValueError('RMSNorm eps must be representable as finite normal BF16')
+    return bits
+
+
+def standalone_source(rows, width, mask_offset, weight_offset, scale=-8, *, eps=1e-5):
     """Return unrelocated assembly; H starts at 0 and FP8 at 2*rows*width.
 
     Physical dimensions are positive multiples of 32. Width is at most 7136
     for the current gamma/masks/staging VMEM layout, not an ISA width limit.
     All output rows are physical; logical padding is the caller's contract.
     """
+    eps_bits = epsilon_bits(eps)
     if type(rows) is not int or rows <= 0 or rows % 32:
         raise ValueError('RMSNorm rows must be a positive multiple of 32')
     if type(width) is not int or width <= 0 or width % 32 or width > MAX_WIDTH:
@@ -74,7 +100,7 @@ def standalone_source(rows, width, mask_offset, weight_offset, scale=-8):
         remaining -= count
         group += 1
     lines += [f'vli.all m6, {_bits(1 / width)}', 'delay 66', 'vmul.bf16 m10, m10, m6', 'delay 66',
-              f'vli.all m6, {_bits(1e-5)}', 'delay 66', 'vadd.bf16 m10, m10, m6', 'delay 66',
+              f'vli.all m6, {eps_bits}', 'delay 66', 'vadd.bf16 m10, m10, m6', 'delay 66',
               'vsqrt.bf16 m10, m10', 'delay 66', 'vrecip.bf16 m10, m10', 'delay 66',
               f'li x16, {H_WORD}', f'li x17, {EXTRA_WORD + MASK_BYTES // 4}', f'li x18, {width // 32}',
               f'li x3, {STAGE_WORD}', f'li x9, {STAGE_WORD + 256}', 'norm_output:', *_load_pair(2, 16),

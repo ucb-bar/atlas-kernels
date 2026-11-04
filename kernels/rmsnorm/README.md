@@ -22,7 +22,7 @@ make gen-rmsnorm NPU_MODEL=/path/to/npu-model ARGS="--rows 32"
 make gen-rmsnorm NPU_MODEL=/path/to/npu-model ARGS="--rows 128 --width 4096"
 ```
 
-`gen.py` admits rows 32 or 128 and positive widths divisible by 32 through 7136. Widths 960 and 2048 retain the pinned resident path, including byte-identical 2048-wide programs. Other widths use the separate standalone path. The standalone generator requires logical width to equal physical width and fixes eps at 1e-5. The DRAM arena remains BF16 H, FP8 output, a 256-byte guard, 65536 mask bytes, and `64 * width` broadcast gamma bytes.
+`gen.py` admits rows 32 or 128 and positive widths divisible by 32 through 7136. Widths 960 and 2048 retain the pinned resident path, including byte-identical 2048-wide programs. Other widths use the separate standalone path. The standalone generator requires logical width to equal physical width; `--eps` (API `eps=`) defaults to 1e-5 and rounds FP32 to a finite normal BF16 immediate with ties to even, rejecting nonpositive, nonfinite, underflowing, or overflowing values; nondefault epsilon selects the streamed path, leaving resident programs pinned. The DRAM arena remains BF16 H, FP8 output, a 256-byte guard, 65536 mask bytes, and `64 * width` broadcast gamma bytes.
 
 The streamed layout uses the default 1572864-byte VMEM: H starts at byte 524288 and occupies `64 * width` bytes, masks start at byte 1048576, gamma starts at byte 1114112, and the 2048-byte output staging region starts at byte 1570816. Gamma must end by staging, giving width 7136. This is the current generator layout capacity; wider rows could use another streaming layout.
 
