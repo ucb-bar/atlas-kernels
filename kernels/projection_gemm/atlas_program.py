@@ -1,9 +1,11 @@
 """Bounded contraction assembly and source-bundle admission."""
 
-from importlib.util import find_spec
 from pathlib import Path
 from atlas_program_checks import checked_assembly
+from atlas_path_guard import checked as safe_path
 from atlas_tooling import sha256
+from run_model_tile import validate_archive_members
+import zipfile
 
 
 _TRAFFIC_REUSE_MODULES = {
@@ -164,28 +166,24 @@ def assembly(m, k, n, output_offset, rescale_exponent=None, *, resident_b=False,
     return "\n".join(lines) + "\n"
 
 
-def _source_path(name):
-    """A sibling file when present (a copied snapshot), else the file Python imports for name."""
-    path = Path(__file__).with_name(name)
-    if path.is_file():
-        return path
-    spec = find_spec(name[:-3])
-    if spec is None or spec.origin is None or Path(spec.origin).name != name:
-        raise ValueError("program source is not importable: " + name)
-    return Path(spec.origin)
+def preflight_bundle(args):
+    """Admit the NPZ central directory before any input digest or content read."""
+    if args.smoke:
+        if args.input or args.manifest:
+            raise ValueError("--smoke excludes --input/--manifest")
+        return
+    if not args.input or not args.manifest:
+        raise ValueError("require --input and --manifest, or --smoke")
+    with zipfile.ZipFile(safe_path(args.input)) as archive:
+        validate_archive_members(archive.infolist())
 
 
-def source_paths(*, traffic_reuse=False):
-    """Source files that program receipts pin, by module file name."""
+def code_sources(*, traffic_reuse=False):
     names = ("atlas_program.py", "atlas_program_checks.py", "atlas_epilogue.py", "atlas_rne_add.py", "atlas_resnet_input.py",
              "atlas_program_reuse_common.py", "run_model_tile.py", "atlas_tile_arithmetic.py", "atlas_weight_source.py")
     if _reuse_enabled(traffic_reuse):
         names += tuple(module + ".py" for module in dict.fromkeys(_TRAFFIC_REUSE_MODULES.values()))
-    return {name: _source_path(name) for name in names}
-
-
-def code_sources(*, traffic_reuse=False):
-    return {name: sha256(path) for name, path in source_paths(traffic_reuse=traffic_reuse).items()}
+    return {name: sha256(Path(__file__).with_name(name)) for name in names}
 
 
 def legacy_epilogue_assembly(m, k, n, output_offset, rescale_exponent, *, epilogue=None, direct_input=None, weight_source=None):

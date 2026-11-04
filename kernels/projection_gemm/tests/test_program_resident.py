@@ -4,7 +4,10 @@ import hashlib
 from pathlib import Path
 import re
 import sys
+from types import SimpleNamespace
 import unittest
+from unittest.mock import MagicMock, patch
+import zipfile
 
 sys.path.insert(0, str(Path(__file__).absolute().parents[3]))
 import atlas_kernels_path  # noqa: E402,F401
@@ -155,6 +158,20 @@ class ResidentBTests(unittest.TestCase):
         for changed in controls:
             with self.subTest(control=controls.index(changed)), self.assertRaises((AssertionError, KeyError)):
                 verify(changed, m, k, n, offset, resident_b=True)
+
+    def test_archive_admission_before_digest(self):
+        args = SimpleNamespace(smoke=False, input="/tmp/source.npz", manifest="/tmp/source.json")
+        required = [zipfile.ZipInfo(name) for name in ("A.npy", "B.npy", "native_C.npy")]
+        archive = MagicMock()
+        archive.__enter__.return_value.infolist.return_value = required
+        with patch.object(producer.zipfile, "ZipFile", return_value=archive), patch.object(producer, "sha256",
+            side_effect=AssertionError("digest before admission")):
+            producer.preflight_bundle(args)
+            # Prohibited/traversal members exist only as in-memory metadata.
+            for name in ("../A.npy",):
+                archive.__enter__.return_value.infolist.return_value = required + [zipfile.ZipInfo(name)]
+                with self.assertRaises(ValueError):
+                    producer.preflight_bundle(args)
 
 
 class PretransposeResidentBTests(unittest.TestCase):

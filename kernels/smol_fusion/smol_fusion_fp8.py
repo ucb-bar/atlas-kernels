@@ -2,7 +2,7 @@
 from atlas_epilogue import Epilogue, Step, TileInput
 from atlas_program import assembly, dma_load_bytes, _reuse_module
 from smol_fusion_program import DRAM_BASE, FusionProgram, channel_tiles, stage_panel, _sha
-from smol_weight_relocate import relocate_assembly
+from chipyard.arena import relocate_assembly
 
 
 def stage_fc1_fp8(row, initial, *, bias_bf16, output_scale_exponent, weight_source=None):
