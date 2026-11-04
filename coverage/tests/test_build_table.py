@@ -115,6 +115,39 @@ class BuildTableTest(unittest.TestCase):
             self.assertNotEqual(failed.returncode, 0)
             self.assertIn('derived rmsnorm 0 differs from qualified build 132', failed.stderr)
 
+    def test_new_model_device_work_is_reported_not_compared(self):
+        self.assertEqual(build_table.launch_failures('new_model', {'projection_calls': 6}, {}), [])
+        self.assertEqual(build_table.launch_failures('new_model', {'projection_calls': 5}, {'projection_calls': 6}),
+                         ['new_model: derived projection_calls 5 differs from qualified build 6'])
+        self.assertTrue(build_table.launch_failures('tinyllama', {'projection_calls': 465}, {}))
+
+    def test_atlas_rows_carry_launch_hints(self):
+        summary = json.loads((COVERAGE / 'coverage.json').read_text())
+        for model, value in summary['models'].items():
+            rows = value['atlas_rows']
+            self.assertEqual(sum(row['count'] for row in rows),
+                             sum(item['ops'] for where, item in value['by_where'].items() if where.startswith('atlas:')), model)
+            self.assertTrue(all(row['where'].startswith('atlas:') for row in rows))
+        hinted = {row['launch']['family'] for row in summary['models']['tinyllama']['atlas_rows'] if isinstance(row['launch'], dict)}
+        self.assertEqual(hinted, {'attention', 'rmsnorm', 'rope', 'rne_add'})
+
+    def test_causal_decoder_example_mapping(self):
+        """The starter mapping places Linear, RMSNorm, SiLU, the gate multiply, and residual adds, and nothing else."""
+        mapping = yaml.safe_load((COVERAGE / 'examples' / 'causal_decoder' / 'mapping.yaml').read_text())
+        rows = [dict(phase='inference', module=module, source=f'loader.py:forward:{line}', op=op, inputs=[],
+                     outputs=[[shape, 'float32']], flops_each=1, count=1)
+                for module, line, op, shape in (('qkv', 22, 'aten.linear.default', [1, 8, 96]),
+                                                ('norm', 22, 'aten.rms_norm.default', [1, 8, 32]),
+                                                ('', 30, 'aten.silu.default', [1, 8, 64]),
+                                                ('', 30, 'aten.mul.Tensor', [1, 8, 64]),
+                                                ('', 30, 'aten.add.Tensor', [1, 8, 32]),
+                                                ('', 27, 'aten.add.Tensor', [1, 4, 8, 8]),
+                                                ('', 27, 'aten.softmax.int', [1, 4, 8, 8]))]
+        placed, unmapped, _ = build_table.place('causal_decoder', {'ops': rows}, mapping['rules']['causal_decoder'], mapping['kernels'])
+        self.assertEqual([row['where'] for row in placed], ['atlas:projection_gemm', 'atlas:rmsnorm', 'atlas:epilogue',
+                                                            'atlas:epilogue', 'atlas:rne_add'])
+        self.assertEqual([row['op'] for row in unmapped], ['aten.add.Tensor', 'aten.softmax.int'])
+
 
 if __name__ == '__main__':
     unittest.main()

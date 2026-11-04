@@ -15,11 +15,13 @@ from atlas_rope_postpass import ResidentRopeEpilogue, append_postpass  # noqa: E
 
 args = parser(__doc__)
 args.add_argument("--shape", type=shape, default=(128, 2048, 2048), help="q (N 2048) or k (N 256); M 32 or 128")
+args.add_argument("--rescale-exponent", type=int, default=0, help="projection output scale 2**E")
 args = args.parse_args()
 m, k, n = args.shape
 offset = m * k + k * n + 256
 common = dict(m=m, n=n, output_offset=offset, scratch_registers=(10, 11))
 extra = offset + Epilogue(**common).output_bytes + 256
 spec = ResidentRopeEpilogue(**common, cos_offset=extra, sin_offset=extra + 64 * m, neg_sin_offset=extra + 128 * m)
-source = append_postpass(atlas_program.assembly(m, k, n, offset, 0, traffic_reuse=True, epilogue=spec), spec)
-write(args, f"rope-{m}x{k}x{n}", source, dict(family="rope", mkn=[m, k, n], table_offset=extra))
+source = append_postpass(atlas_program.assembly(m, k, n, offset, args.rescale_exponent, traffic_reuse=True, epilogue=spec), spec)
+write(args, f"rope-{m}x{k}x{n}", source, dict(family="rope", mkn=[m, k, n], table_offset=extra, output_offset=offset,
+      recipe=atlas_program._reuse_module(m, k, n)))

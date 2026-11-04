@@ -25,6 +25,9 @@ REQUIRED_LAUNCHES = {
 }
 
 
+ATLAS_ROW_FIELDS = ('phase', 'module', 'source', 'op', 'component', 'inputs', 'outputs', 'count', 'flops_each', 'where', 'rule')
+
+
 def patterns(value):
     return value if isinstance(value, list) else [value]
 
@@ -107,6 +110,8 @@ def launch_failures(model, derived, expected):
     """Every mandatory category is checked, including categories missing entirely from derived work."""
     failures = []
     required = REQUIRED_LAUNCHES.get(model, {})
+    if not required and not expected:
+        return []  # A new model with no qualified build: derived work is reported, not compared.
     for key in required.keys() | derived.keys():
         value = derived.get(key, 0)
         target = required.get(key, expected.get(key))
@@ -146,6 +151,19 @@ def check_cites(mapping, roots):
         if not manifest.is_file() or yaml.safe_load(manifest.read_text()).get('family') != family:
             missing.append(f'atlas-kernels:kernels/{family}/kernel.yaml family {family}')
     return sorted(set(missing))
+
+
+def dump_summary(summary):
+    """JSON with one line per Atlas row, so the per-row launch input stays compact."""
+    rows = {}
+    for model, value in summary['models'].items():
+        rows[model], value['atlas_rows'] = value['atlas_rows'], f'@atlas_rows:{model}@'
+    text = json.dumps(summary, indent=1)
+    for model, items in rows.items():
+        summary['models'][model]['atlas_rows'] = items
+        body = ',\n   '.join(json.dumps(row, separators=(',', ':')) for row in items)
+        text = text.replace(json.dumps(f'@atlas_rows:{model}@'), f'[\n   {body}\n  ]' if items else '[]')
+    return text + '\n'
 
 
 def main():
@@ -209,7 +227,11 @@ def main():
             'status': 'INCOMPLETE' if unmapped else 'COMPLETE', 'unmapped': unmapped,
             'flops': dict(flops), 'atlas_share_of_runtime_flops': flops['atlas'] / runtime if runtime else 0,
             'by_where': {key: dict(value) for key, value in sorted(by_where.items())},
+            # Device rows with their rule's launch hint, the input coverage/bench_model.py turns into launches.
+            'atlas_rows': [dict({key: row[key] for key in ATLAS_ROW_FIELDS if key in row},
+                                launch=rules[row['rule']].get('launch')) for row in placed if row['kind'] == 'atlas'],
             'builds': {name: text for name, text in builds.items() if name != 'launches'},
+            'bench': mapping.get('bench', {}).get(model, {}),
         }
         lines = [f'## {model} ({column})', '']
         lines += [f"Export: `{inventory['method']}` in Python {inventory['environment']['python'].split()[0]}, torch "
@@ -271,7 +293,7 @@ def main():
     text = [(HERE / 'COVERAGE.head.md').read_text().rstrip('\n'), '', *table, '', *sections, '']
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / 'COVERAGE.md').write_text('\n'.join(text))
-    (args.out / 'coverage.json').write_text(json.dumps(summary, indent=1) + '\n')
+    (args.out / 'coverage.json').write_text(dump_summary(summary))
     for model, value in summary['models'].items():
         print(model, value['status'], value['derived_launches'],
               f"atlas share {100 * value['atlas_share_of_runtime_flops']:.4f}%", f"unmapped rows {len(value['unmapped'])}")

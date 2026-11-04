@@ -16,6 +16,7 @@ from atlas_program_checks import check_matrix_registers  # noqa: E402
 WIDTH, MASK_BYTES = 2048, 65536
 args = parser(__doc__)
 args.add_argument("--rows", type=int, choices=(32, 128), default=128, help="physical rows (32 is one decode row)")
+args.add_argument("--width", type=int, choices=(WIDTH,), default=WIDTH, help="row width (only 2048 is generated)")
 args.add_argument("--norm-scale-exponent", type=int, default=-8)
 args = args.parse_args()
 m = args.rows

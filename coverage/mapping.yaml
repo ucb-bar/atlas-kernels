@@ -14,6 +14,14 @@
 # code that performs that layout. Zero-FLOP casts with identical shapes in one source line (SmolVLA RoPE and
 # attention both cast q to FP32) go to the first matching rule; this changes no FLOP or launch count.
 #
+# launch (optional, read only by coverage/bench_model.py) says how the rule's Atlas rows become device launches:
+#   per: {match}            one launch per matching row instance (attention softmax, the RMSNorm output multiply)
+#   fuse_into: [module]     the rows run inside the panels of these projection modules (same phase), which bench
+#                           as this family's fused program instead of a plain projection_gemm panel
+#   rows: {match}           the hint covers only these rows of the rule (default: all of them)
+# plus family parameters (kv_heads, mask, masks, output_fp8, steps, output, consumer_width, operations). It may be a
+# list of hints. Linear and Conv2d rows on atlas:projection_gemm need no hint; bench.<model> gives their panel split.
+#
 # Citations name files at atlas-mlir 8259b83 (atlas-mlir:), Merlin 55bc82d9 (merlin:), atlas-kernels
 # feat/kernel-library (atlas-kernels:). Facts that only a local build receipt shows are labeled local receipt.
 
@@ -54,6 +62,15 @@ builds:
       (atlas-mlir: docs/smol-fast-build.md:3); op placement is identical to default.
     launches: {projection_calls: 1421, projection_panels: 2715, attention: 200, smol_fusion_calls: 24}
 
+# Physical projection panels for coverage/bench_model.py: logical rows split at panel_rows and padded to 32; K and N
+# padded to 32; N split into chunks of n columns, from the first panel_columns entry whose max_k admits K (no entry:
+# N stays whole). TinyLlama's split reproduces the kit's 840 panels (atlas-mlir: tools/tiny_full/capture_boundaries.py:103-113
+# admits the captured panels; atlas-kernels: kernels/projection_gemm/atlas_program.py:11-37 lists the recipes);
+# SmolVLA's is smol_full_plan.panels() (atlas-mlir: tools/smol_full_plan.py:50-59), 2,715 panels.
+bench:
+  tinyllama: {panel_rows: 128, panel_columns: [{max_k: 2048, n: 2048}, {n: 1024}]}
+  smolvla: {panel_rows: 128}
+
 cites:
   tiny_plan: &tiny_plan atlas-mlir:tools/tiny_full/attention_export.py
   smol_plan: &smol_plan atlas-mlir:tools/smol_full_plan.py
@@ -82,6 +99,7 @@ rules:
       cite: ['atlas-mlir:tools/tiny_full/fusion.py:17-25', *tiny_plan]
     - match: {module: ['model.layers.*.input_layernorm', 'model.layers.*.post_attention_layernorm']}
       where: atlas:rmsnorm
+      launch: {family: rmsnorm, per: {op: aten.mul.Tensor, dtype: bfloat16}}
       cite: [atlas-kernels:kernels/rmsnorm/atlas_norm_postpass.py, 'atlas-mlir:tools/tiny_full/norm.py:19', 'atlas-mlir:tools/tiny_full/tiny_full_model.c:110-113,138-141']
     - match: {module: model.layers.*.self_attn, source: 'modeling_llama.py:forward:26[234]'}
       where: host:atlas-mlir/runtime/tiny_attention.c
@@ -89,6 +107,7 @@ rules:
       cite: ['atlas-mlir:runtime/tiny_attention.c:78-110']
     - match: {module: model.layers.*.self_attn, source: 'modeling_llama.py:forward:267'}
       where: atlas:rope
+      launch: {family: rope, fuse_into: [model.layers.*.self_attn.q_proj, model.layers.*.self_attn.k_proj]}
       note: q/k RoPE post-pass in both phases (PREFILL_ROPE, DECODE_ROPE; 44 rope panels per step)
       cite: [atlas-kernels:kernels/rope/atlas_rope_postpass.py, 'atlas-mlir:tools/tiny_full/fusion.py:73-75', 'atlas-mlir:tools/tiny_full/tiny_full_model.c:107,117-121']
     - match: {module: model.layers.*.self_attn, source: 'modeling_llama.py:forward:270'}
@@ -97,10 +116,12 @@ rules:
       cite: ['atlas-mlir:runtime/tiny_attention.c:78-110']
     - match: {module: model.layers.*.self_attn, source: ['modeling_llama.py:forward:276', 'modeling_llama.py:forward:287']}
       where: atlas:attention
+      launch: {family: attention, per: {op: aten.softmax.int}, kv_heads: 4, mask: causal, output_fp8: true}
       note: GQA 32/4, d=64, scale 0.125, causal, FP8 output in the o_proj input layout
       cite: [atlas-kernels:kernels/attention/atlas_attention_v2_program.py, 'atlas-mlir:tools/tiny_full/tiny_full_model.c:124', *tiny_plan]
     - match: {module: model.layers.*, op: aten.add.Tensor, phase: prefill}
       where: atlas:rne_add
+      launch: {family: rne_add, fuse_into: [model.layers.*.self_attn.o_proj, model.layers.*.mlp.down_proj]}
       note: prefill o and down epilogues add the residual (add_rne, 66 panels)
       cite: [atlas-kernels:kernels/rne_add/atlas_rne_add.py, 'atlas-mlir:tools/tiny_full/fusion.py:63-64', 'atlas-mlir:tools/tiny_full/tiny_full_model.c:105,133-134,144-145']
     - match: {module: model.layers.*, op: aten.add.Tensor, phase: decode}
@@ -109,6 +130,9 @@ rules:
       cite: ['atlas-mlir:tools/tiny_full/tiny_full_model.c:74-84,135,147']
     - match: {module: [model.layers.*.mlp.act_fn, model.layers.*.mlp]}
       where: atlas:epilogue
+      launch:
+        - {family: epilogue, rows: {op: aten.silu.default}, fuse_into: [model.layers.*.mlp.gate_proj], steps: [silu]}
+        - {family: epilogue, rows: {op: aten.mul.Tensor}, fuse_into: [model.layers.*.mlp.up_proj], steps: [mul], output: fp8, consumer_width: 5632}
       note: SiLU in the gate epilogue, gate x up in the up epilogue with FP8 output
       cite: [atlas-kernels:kernels/epilogue/atlas_epilogue.py, 'atlas-mlir:tools/tiny_full/fusion.py:65-68', 'atlas-mlir:tools/tiny_full/tiny_full_model.c:142-143']
     - match: {module: model.norm}
@@ -154,6 +178,7 @@ rules:
       cite: ['merlin:examples/atlas/comparisons/smol_vision_ops.c:34', 'merlin:examples/atlas/comparisons/smol_vision_graph.c:70,88,103']
     - match: {module: vlm_with_expert.vlm.model.vision_model.encoder.layers.*.self_attn}
       where: atlas:attention
+      launch: {family: attention, per: {op: aten.scaled_dot_product_attention.default}, mask: none}
       note: 12 heads, 1024 keys, mask none, BF16 output (24 launches)
       cite: [atlas-kernels:kernels/attention/atlas_attention_v2_program.py, 'merlin:examples/atlas/comparisons/smol_vision_graph.c:76-81', *smol_plan]
     - match: {module: vlm_with_expert.vlm.model.vision_model.encoder.layers.*, op: aten.add.Tensor}
@@ -162,6 +187,7 @@ rules:
       cite: ['merlin:examples/atlas/comparisons/smol_vision_graph.c:83,99', 'merlin:examples/atlas/comparisons/smol_host_ops.c:111']
     - match: {module: vlm_with_expert.vlm.model.vision_model.encoder.layers.*.mlp.activation_fn}
       where: atlas:smol_fusion
+      launch: {family: smol_fusion, fuse_into: [vlm_with_expert.vlm.model.vision_model.encoder.layers.*.mlp.fc1], operations: [bias, gelu_tanh], output: fp8}
       note: fc1 bias and GELU (tanh) fused, FP8 output read by fc2 (192 panels)
       cite: [atlas-kernels:kernels/smol_fusion/smol_fusion_fp8.py, 'merlin:examples/atlas/comparisons/smol_vision_graph.c:89-94', 'atlas-mlir:runtime/smol_fusion.c:180', *smol_plan]
     - match: {module: vlm_with_expert.vlm.model.connector}
@@ -237,6 +263,7 @@ rules:
       cite: ['merlin:examples/atlas/comparisons/smol_policy_block.c:84-93']
     - match: {module: '', source: 'smolvlm_with_expert.py:forward:4[34]*'}
       where: atlas:attention
+      launch: {family: attention, per: {op: aten.softmax.int}, kv_heads: 5, mask: arbitrary, masks: {177x177: prefix_state_block, default: all_visible}}
       note: prefix 177x177 15/5 and expert 50x{227,177} 15/5, arbitrary mask, BF16 output (176 launches)
       cite: [atlas-kernels:kernels/attention/atlas_attention_v2_program.py, 'merlin:examples/atlas/comparisons/smol_policy_block.c:71-80,94-104', 'atlas-mlir:runtime/smol_policy_raw.c:315,387', *smol_plan]
     # Denoising step glue.
