@@ -3,10 +3,13 @@
 #   make test NPU_MODEL=...
 #   make gen-projection_gemm NPU_MODEL=... ARGS='--shape 128x2048x2048 --traffic-reuse'
 #   make coverage   (rebuild coverage/COVERAGE.md from the committed fixtures; needs PyYAML)
-#   make bench-model MODEL=tinyllama OUT=... NPU_MODEL=...   (coverage/bench_model.py on the committed coverage)
+#   make bench-model MODEL=tinyllama OUT=... NPU_MODEL=... MODEL_PYTHON=... ATLAS_MLIR_BIN=...
 # gen-<family> writes <stem>.S, the assembled <stem>.bin, and <stem>.json into build/<family>/.
 PYTHON ?= python3
 NPU_MODEL ?=
+EXPORT_PYTHON ?= $(if $(TORCH_PYTHON),$(TORCH_PYTHON),$(PYTHON))
+MODEL_PYTHON ?= $(TORCH_PYTHON)
+ATLAS_MLIR_BIN ?=
 SUITES := $(sort $(dir $(wildcard kernels/*/tests/test_*.py lib/tests/test_*.py)))
 FAMILIES := $(patsubst kernels/%/tests/,%,$(filter kernels/%,$(SUITES)))
 GENERATORS := $(patsubst kernels/%/gen.py,%,$(wildcard kernels/*/gen.py))
@@ -27,14 +30,19 @@ $(addprefix gen-,$(GENERATORS)): gen-%:
 	$(ENV) $(PYTHON) kernels/$*/gen.py --out build/$* $(ARGS)
 
 coverage:
-	PYTHONDONTWRITEBYTECODE=1 python3 coverage/build_table.py
+	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) coverage/build_table.py
 
 test-coverage:
-	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s coverage/tests -t coverage/tests -v
+	$(ENV) $(PYTHON) -m unittest discover -s coverage/tests -t coverage/tests -v
 
 # The plan tests also run under test-coverage; this target runs the npu_model execution tests with PYTHON and NPU_MODEL.
 test-bench-model:
 	$(ENV) $(PYTHON) -m unittest discover -s coverage/tests -t coverage/tests -p 'test_bench_model.py' -v
 
 bench-model:
-	$(ENV) $(PYTHON) coverage/bench_model.py --coverage coverage/coverage.json --model $(MODEL) --model-root $(NPU_MODEL) --out $(OUT) --workers $(WORKERS)
+	@test -n "$(strip $(MODEL))" || { echo 'bench-model requires MODEL' >&2; exit 2; }
+	@test -n "$(strip $(OUT))" || { echo 'bench-model requires OUT' >&2; exit 2; }
+	@test -n "$(strip $(NPU_MODEL))" || { echo 'bench-model requires NPU_MODEL' >&2; exit 2; }
+	@test -n "$(strip $(MODEL_PYTHON))" || { echo 'bench-model requires MODEL_PYTHON (Python >=3.14 with torch, NumPy, and npu_model)' >&2; exit 2; }
+	@test -n "$(strip $(ATLAS_MLIR_BIN))" || { echo 'bench-model requires ATLAS_MLIR_BIN' >&2; exit 2; }
+	$(ENV) "$(MODEL_PYTHON)" coverage/bench_model.py --coverage coverage/coverage.json --model "$(MODEL)" --model-root "$(NPU_MODEL)" --out "$(OUT)" --workers $(WORKERS) --atlas-mlir-bin "$(ATLAS_MLIR_BIN)" --min-tier stream-verified

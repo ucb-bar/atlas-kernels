@@ -4,9 +4,11 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 COVERAGE = Path(__file__).absolute().parents[1]
 sys.path.insert(0, str(COVERAGE))
@@ -14,6 +16,8 @@ import bench_model  # noqa: E402
 
 MODEL_ROOT = os.environ.get('ATLAS_NPU_MODEL_ROOT')
 CAN_RUN = bool(MODEL_ROOT) and all(importlib.util.find_spec(name) for name in ('numpy', 'torch', 'npu_model'))
+MLIR_BIN = os.environ.get('ATLAS_MLIR_BIN')
+CAN_COMPILE = bool(MLIR_BIN) and all((Path(MLIR_BIN) / name).is_file() for name in ('atlas-opt', 'atlas-emit'))
 
 
 def linear(module, m, k, n, **extra):
@@ -96,7 +100,9 @@ class RunTest(unittest.TestCase):
             path = Path(tmp) / 'coverage.json'
             path.write_text(json.dumps(toy_model()))
             out = Path(tmp) / 'out'
-            status = bench_model.main(['--coverage', str(path), '--model-root', MODEL_ROOT, '--out', str(out), '--workers', '4'])
+            # Tool-discovery environment variables must not opt an ordinary bench into compilation.
+            with mock.patch.dict(os.environ, {'ATLAS_MLIR_BIN': str(Path(tmp) / 'missing-compiler')}):
+                status = bench_model.main(['--coverage', str(path), '--model-root', MODEL_ROOT, '--out', str(out), '--workers', '4'])
             self.assertEqual(status, 0)
             document = json.loads((out / 'MODEL-BENCH.json').read_text())
             rows = {row['family']: row for row in document['launches']}
@@ -107,6 +113,8 @@ class RunTest(unittest.TestCase):
             self.assertGreater(gemm['model_cycles'], 0)
             self.assertEqual(gemm['total_cycles'], gemm['model_cycles'])
             self.assertTrue(gemm['variant'].startswith('default schedule'))
+            self.assertIsNone(document['backend'])
+            self.assertIsNone(gemm['backend'])
             self.assertEqual(norm['status'], 'no-variant')
             self.assertIn("invalid choice: '32'", norm['error'])
             self.assertEqual(norm['count'], 2)
@@ -115,6 +123,72 @@ class RunTest(unittest.TestCase):
             self.assertIn('npu_model model cycles', text)
             self.assertIn('ignore host time, launch overhead', text)
             self.assertIn('`aten.softmax.int`', text)
+            self.assertIn('Compiler tier counts by distinct launch: none.', text)
+
+    def run_backend_cli(self, temporary, compiler, *options):
+        path = temporary / 'coverage.json'
+        path.write_text(json.dumps(toy_model()))
+        out = temporary / 'out'
+        process = subprocess.run([sys.executable, '-B', str(COVERAGE / 'bench_model.py'),
+                                  '--coverage', str(path), '--model-root', MODEL_ROOT, '--out', str(out),
+                                  '--workers', '2', '--family', 'projection_gemm',
+                                  '--atlas-mlir-bin', str(compiler), *options],
+                                 capture_output=True, text=True, timeout=120)
+        self.assertTrue((out / 'MODEL-BENCH.json').is_file(), process.stdout + process.stderr)
+        return process, json.loads((out / 'MODEL-BENCH.json').read_text()), (out / 'MODEL-BENCH.md').read_text()
+
+    def test_backend_mismatch_and_tier_rejection_fail_cli(self):
+        for reject_stream, expected in ((False, 'atlas-emit words differ from the assembler'),
+                                        (True, 'program tier encode-only is below required verified')):
+            with self.subTest(reject_stream=reject_stream), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                compiler = root / 'bin'
+                compiler.mkdir()
+                # These tools exercise the real adapter and job subprocesses. A successful emitter
+                # with incorrect words must fail just as a stream verifier rejection must fail.
+                for name in ('atlas-opt', 'atlas-emit'):
+                    tool = compiler / name
+                    tool.write_text(f'#!{sys.executable}\nimport sys\n'
+                                    'if "--version" in sys.argv:\n    print("test compiler")\n'
+                                    + ('elif True:\n    print("00000000")\n' if name == 'atlas-emit' else
+                                       ('else:\n    print("kernel.mlir:1: error: forced stream rejection", file=sys.stderr)\n'
+                                        '    sys.exit(1)\n' if reject_stream else 'else:\n    pass\n')))
+                    tool.chmod(0o755)
+                options = ['--min-tier', 'verified'] if reject_stream else []
+                process, document, text = self.run_backend_cli(root, compiler, *options)
+                self.assertEqual(process.returncode, 1, process.stdout + process.stderr)
+                self.assertEqual(len(document['launches']), 1)
+                row = document['launches'][0]
+                self.assertEqual(row['status'], 'error')
+                self.assertIn(expected, row['error'])
+                self.assertIn(expected, process.stderr)
+                self.assertIsNone(row['backend'])
+                self.assertIn('Compiler tier counts by distinct launch: none.', text)
+
+    @unittest.skipUnless(CAN_COMPILE, 'needs ATLAS_MLIR_BIN with atlas-opt and atlas-emit')
+    def test_backend_cli_records_equal_words_tier_and_tools(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            process, document, text = self.run_backend_cli(Path(tmp), MLIR_BIN)
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        self.assertEqual(len(document['launches']), 1)
+        row = document['launches'][0]
+        self.assertEqual(row['status'], 'ok')
+        self.assertTrue(row['bit_exact'])
+        self.assertTrue(row['timed_output_equal'])
+        backend = row['backend']
+        self.assertTrue(backend['words_equal_assembler'])
+        self.assertEqual(backend['min_tier'], 'stream-verified')
+        self.assertIn(backend['tier'], ('verified', 'stream-verified'))
+        self.assertEqual(backend['words'], row['program_words'])
+        self.assertEqual(backend['words_sha256'], row['words_sha256'])
+        self.assertEqual(backend['tools'], document['backend']['tools'])
+        for tool in ('atlas-opt', 'atlas-emit'):
+            self.assertEqual(Path(backend['tools'][tool]['path']).parent, Path(MLIR_BIN).absolute())
+            self.assertRegex(backend['tools'][tool]['sha256'], '^[0-9a-f]{64}$')
+        for field in ('source_sha256', 'words_sha256', 'arena_sha256'):
+            self.assertRegex(row[field], '^[0-9a-f]{64}$')
+        self.assertGreater(row['arena_bytes'], 0)
+        self.assertIn(f"Compiler tier counts by distinct launch: 1 `{backend['tier']}`.", text)
 
     def test_generator_rejection_is_no_variant(self):
         entry = dict(key='epilogue:toy', family='epilogue',

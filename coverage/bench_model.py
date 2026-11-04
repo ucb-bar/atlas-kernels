@@ -7,6 +7,9 @@ distinct launch the script
 
 - generates the program with the family's kernels/<family>/gen.py (a subprocess; a shape the generator rejects is
   reported as no-variant with the generator's error),
+- when --atlas-mlir-bin is explicit, translates the program to machine IR through lib/atlas_backend.py, runs
+  atlas-opt's stream and timing verifiers, and requires atlas-emit's words to equal npu_model's assembler words
+  at --min-tier (default stream-verified),
 - stages seeded synthetic inputs at that shape and runs the program on npu_model 47b8599 with numerics="rtl"
   (lib/atlas_execution.Executor), comparing the output bytes with the independent lib/golden reference where the
   family has one, and the decoded output with an FP32 PyTorch reference (cosine, relative error),
@@ -582,7 +585,27 @@ def compare(built, output, golden):
                 padding_signed_zero_only=logical and pairs <= {frozenset((0, 0x8000))})
 
 
-def run_job(entry, mode, model_root, work, max_cycles, max_instructions):
+def program_identity(built, atlas_mlir_bin=None, min_tier='stream-verified'):
+    """Identify the exact staged inputs and cross-check the address-specific executable words."""
+    import io
+    from npu_model.util.converter import input_to_program
+    words = tuple(int(word) for word in input_to_program(io.StringIO(built.source)).assemble())
+    result = dict(source_sha256=hashlib.sha256(built.source.encode()).hexdigest(),
+                  arena_sha256=hashlib.sha256(built.arena).hexdigest(), arena_bytes=len(built.arena),
+                  program_words=len(words),
+                  words_sha256=hashlib.sha256(b''.join(w.to_bytes(4, 'little') for w in words)).hexdigest())
+    if atlas_mlir_bin is not None:
+        import atlas_backend
+        compiled = atlas_backend.cross_checked(built.source, words, bin_dir=atlas_mlir_bin, min_tier=min_tier)
+        result['backend'] = dict(compiled.record(), words_equal_assembler=True, min_tier=min_tier,
+                                 tools=atlas_backend.tools(atlas_mlir_bin).identity())
+    else:
+        result['backend'] = None
+    return result
+
+
+def run_job(entry, mode, model_root, work, max_cycles, max_instructions, atlas_mlir_bin=None,
+            min_tier='stream-verified'):
     """One functional or timed execution of one launch; returns a result dict (never raises for NoVariant)."""
     os.environ.setdefault('OMP_NUM_THREADS', '1')
     sys.path.insert(0, str(model_root))
@@ -598,8 +621,9 @@ def run_job(entry, mode, model_root, work, max_cycles, max_instructions):
     except NoVariant as error:
         return dict(result, status='no-variant', error=str(error))
     result.update(variant=built.variant, generator_words=built.generator.get('words'), generator_command=built.generator.get('command'),
-                  source_sha256=hashlib.sha256(built.source.encode()).hexdigest(), meta=built.meta)
+                  meta=built.meta)
     try:
+        result.update(program_identity(built, atlas_mlir_bin, min_tier))
         if mode == 'functional':
             from atlas_execution import Executor
             execution = Executor(model_root).execute(built.source, built.arena, built.output_offset, built.output_bytes,
@@ -624,7 +648,8 @@ def run_job(entry, mode, model_root, work, max_cycles, max_instructions):
 
 def job_main(args):
     entry = json.loads(Path(args.job).read_text())
-    result = run_job(entry, args.mode, args.model_root, Path(args.job).parent, args.max_cycles, args.max_instructions)
+    result = run_job(entry, args.mode, args.model_root, Path(args.job).parent, args.max_cycles, args.max_instructions,
+                     args.atlas_mlir_bin, args.min_tier)
     Path(args.result).write_text(json.dumps(result, indent=1) + '\n')
     return 0
 
@@ -650,11 +675,19 @@ def execute(launches, args):
         name = hashlib.sha256((entry['key'] + mode).encode()).hexdigest()[:16]
         job, out = work / f'{name}.job.json', work / f'{name}.{mode}.json'
         if args.resume and out.exists():
-            return entry, mode, json.loads(out.read_text())
+            cached = json.loads(out.read_text())
+            backend = cached.get('backend')
+            # A compiler-enabled run must never silently reuse an assembler-only job or a weaker policy.
+            if cached.get('status') in ('no-variant', 'timeout') or (
+                    not args.atlas_mlir_bin and not backend) or (backend and
+                    backend.get('min_tier') == args.min_tier and backend.get('tools') == args.backend_tools):
+                return entry, mode, cached
         job.write_text(json.dumps(entry) + '\n')
         command = [sys.executable, '-B', str(Path(__file__).absolute()), '--job', str(job), '--mode', mode,
                    '--result', str(out), '--model-root', str(args.model_root), '--max-cycles', str(args.max_cycles),
                    '--max-instructions', str(args.max_instructions)]
+        if args.atlas_mlir_bin:
+            command += ['--atlas-mlir-bin', str(args.atlas_mlir_bin), '--min-tier', args.min_tier]
         started = time.perf_counter()
         environment = dict(os.environ, OMP_NUM_THREADS='1', PYTHONDONTWRITEBYTECODE='1')
         try:
@@ -711,6 +744,8 @@ def merge(launches, results):
                    padding_signed_zero_only=functional.get('padding_signed_zero_only'),
                    cosine=functional.get('cosine'), relative_error=functional.get('relative_error'),
                    max_abs_error=functional.get('max_abs_error'), meta=functional.get('meta'))
+        for key in ('backend', 'source_sha256', 'words_sha256', 'arena_sha256', 'arena_bytes', 'reuse_proof'):
+            row[key] = functional.get(key)
         errors = [f"{mode}: {r.get('error') or r.get('status')}" for mode, r in (('functional', functional), ('timed', timed))
                   if r.get('status') not in ('ok', 'timeout')]
         if timed.get('status') == 'ok':
@@ -768,7 +803,8 @@ def render(document):
     lines = [f"# {model} kernel bench at model shapes", '',
              f"Regenerate: `{document['command']}`", '',
              f"Input: `{document['coverage']}` (SHA-256 `{document['coverage_sha256']}`), coverage status {document['coverage_status']}. "
-             f"Every distinct device launch the coverage places on Atlas ran on npu_model `{document['npu_model']}` with numerics=\"rtl\" "
+             f"The coverage derives {len(rows):,} distinct launches; {sum(row['status'] == 'ok' for row in rows):,} executed "
+             f"on npu_model `{document['npu_model']}` with numerics=\"rtl\" "
              f"on seeded synthetic inputs at the model's shape ({document['workers']} worker processes; {job_seconds:,.0f} job-seconds in all, "
              f"longest job {longest:,.0f} s).", '',
              'Model cycles are npu_model Core cycle-model counts, not RTL cycles. Cycles x count multiplies one launch by the number of '
@@ -776,6 +812,17 @@ def render(document):
              'movement between launches. Bit-exact compares output bytes with the independent lib/golden reference where the family '
              'has one; cosine and rel-err compare the decoded output with an FP32 PyTorch reference on the unquantized inputs, so they '
              'include FP8 input quantization. Inputs are synthetic, so fidelity and data-dependent cycles are representative, not the model\'s.', '']
+    lines += ['A distinct launch groups the same shape and variant; a distinct program is the address-specific program text, '
+              'as in the separate 1,589-program kit check.', '',
+              'Shares below are by launch kind: `epilogue`, `rne_add`, `rope`, and `smol_fusion` include their GEMM projection '
+              'and fused stage, while `projection_gemm` covers unfused panels. They are not shares of non-GEMM time; '
+              'the generator metadata does not provide separately measured cycles for those stages.', '']
+    if document.get('backend'):
+        lines += [f"Compiler backend: machine IR, atlas-opt stream and timing verifiers, and atlas-emit, with minimum tier "
+                  f"`{document['backend']['min_tier']}`. Successful jobs require emitted words to equal npu_model's assembler; "
+                  'per-job JSON records binary SHA-256 digests, diagnostics, and word counts.', '']
+    else:
+        lines += ['Programs were assembled by npu_model only, with no compiler tier.', '']
     reconciliation = document['launch_checks']
     if reconciliation:
         lines += ['| device launches | derived here | qualified kit |', '| --- | ---: | ---: |']
@@ -791,11 +838,16 @@ def render(document):
             item[2] += row['count']
     total = sum(value[1] for value in by_family.values())
     estimated = [row for row in ok if row.get('cycles_source', 'full launch') != 'full launch']
+    estimated_count = sum(r['count'] for r in estimated)
+    total_label = f'{total:,}' + (f' (includes {estimated_count:,} estimated launches)' if estimated else '')
     caveat = (f" {sum(r['count'] for r in estimated):,} of those launches use a row-subset estimate ("
               + ', '.join(f"`{r['family']}` {r['shape']}" for r in estimated) + ').') if estimated else ''
     lines += ['## Summary', '', f"Device cycle estimate (sum of model cycles x count over {sum(r['count'] for r in ok):,} of "
-              f"{sum(r['count'] for r in rows):,} launches): {total:,} npu_model model cycles. It ignores host time and launch overhead.{caveat}", '',
-              '| family | launches | launches with cycles | model cycles x count | share |', '| --- | ---: | ---: | ---: | ---: |']
+              f"{sum(r['count'] for r in rows):,} launches): {total_label} npu_model model cycles. It ignores host time and launch overhead.{caveat}", '']
+    tiers = Counter(row['backend']['tier'] for row in rows if row.get('backend'))
+    lines += ['Compiler tier counts by distinct launch: ' + (', '.join(f'{count:,} `{tier}`' for tier, count in sorted(tiers.items()))
+              if tiers else 'none') + '.', '',
+              '| launch kind | launches | launches with cycles | model cycles x count | share |', '| --- | ---: | ---: | ---: | ---: |']
     for family, (count, cycles, timed) in sorted(by_family.items(), key=lambda item: -item[1][1]):
         lines.append(f"| `{family}` | {count:,} | {timed:,} | {cycles:,} | {100 * cycles / total if total else 0:.2f}% |")
     lines += ['', 'Top shapes by total cycles:', '', '| family | shape | count | model cycles | cycles x count |', '| --- | --- | ---: | ---: | ---: |']
@@ -814,12 +866,12 @@ def render(document):
             lines.append(f"- `{row['family']}` {row['shape']}: functional {row.get('functional_seconds')} s, timed "
                          f"{row.get('timed_seconds')} s; {row.get('timed_note', 'completed')}; cycles: {row.get('cycles_source', 'none')}")
     lines.append('')
-    lines += ['## Launches', '', '| family | shape | export dtype | variant | words | count | model cycles | cycles x count | golden | '
+    lines += ['## Launches', '', '| family | shape | export dtype | variant | tier | words | count | model cycles | cycles x count | golden | '
               'bit-exact | timed equals functional | cosine | rel-err | modules |',
-              '| --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- | :-: | :-: | ---: | ---: | --- |']
+              '| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- | :-: | :-: | ---: | ---: | --- |']
     for row in rows:
         if row['status'] == 'no-variant':
-            lines.append(f"| `{row['family']}` | {row['shape']} | {', '.join(row['dtypes'])} | no-variant | | {row['count']:,} | | | | | | | | "
+            lines.append(f"| `{row['family']}` | {row['shape']} | {', '.join(row['dtypes'])} | no-variant | n/a | | {row['count']:,} | | | | | | | | "
                          f"{', '.join(f'`{m}`' for m in row['modules'][:3])}{' ...' if len(row['modules']) > 3 else ''} |")
             continue
         exact = 'n/a' if row.get('bit_exact') is None else 'exact' if row['bit_exact'] else 'DIFFERS'
@@ -834,7 +886,7 @@ def render(document):
         cosine = '' if row.get('cosine') is None else format(row['cosine'], '.5f')
         relative = '' if row.get('relative_error') is None else format(100 * row['relative_error'], '.3f') + '%'
         lines.append(f"| `{row['family']}` | {row['shape']} | {', '.join(row['dtypes'])} | {row.get('variant') or row['status']} | "
-                     f"{row.get('program_words') or ''} | {row['count']:,} | {cycles} | "
+                     f"{(row.get('backend') or {}).get('tier', 'none')} | {row.get('program_words') or ''} | {row['count']:,} | {cycles} | "
                      f"{total} | {row.get('golden') or 'none'} | {exact} | {timed} | {cosine} | {relative} | "
                      f"{', '.join(f'`{m}`' for m in row['modules'][:3])}{' ...' if len(row['modules']) > 3 else ''} |")
     lines += ['', '`words` is the executed program size in 32-bit instruction words (after the arena relocation the bench applies). '
@@ -889,6 +941,8 @@ def load_model(coverage, name):
 
 def write(document, args):
     args.out.mkdir(parents=True, exist_ok=True)
+    document['compiler_summary'] = dict(tiers=dict(sorted(Counter(
+        row['backend']['tier'] for row in document['launches'] if row.get('backend')).items())))
     (args.out / 'MODEL-BENCH.json').write_text(json.dumps(document, indent=1) + '\n')
     text = render(document)
     (args.out / 'MODEL-BENCH.md').write_text(text)
@@ -902,6 +956,9 @@ def main(argv=None):
     parser.add_argument('--coverage', type=Path, help='coverage.json from coverage/build_table.py')
     parser.add_argument('--model', help='model name in the coverage (default: its only model)')
     parser.add_argument('--model-root', type=Path, help='npu_model checkout at 47b8599')
+    parser.add_argument('--atlas-mlir-bin', type=Path, help='explicit atlas-opt and atlas-emit directory; no environment fallback')
+    parser.add_argument('--min-tier', choices=('encode-only', 'stream-verified', 'verified'), default='stream-verified',
+                        help='required compiler tier (default: stream-verified when --atlas-mlir-bin is given)')
     parser.add_argument('--out', type=Path)
     parser.add_argument('--markdown', type=Path, help='also write MODEL-BENCH.md here')
     parser.add_argument('--workers', type=int, default=32)
@@ -932,6 +989,12 @@ def main(argv=None):
         return 1 if failures(document['launches']) else 0
     if args.coverage is None or args.out is None or (args.model_root is None and not args.plan_only):
         parser.error('--coverage and --out are required, and --model-root unless --plan-only')
+    args.backend_tools = None
+    if args.atlas_mlir_bin and not args.plan_only:
+        sys.path.insert(0, str(ROOT / 'lib'))
+        import atlas_backend
+        args.atlas_mlir_bin = args.atlas_mlir_bin.absolute()
+        args.backend_tools = atlas_backend.tools(args.atlas_mlir_bin).identity()
     name, model = load_model(args.coverage, args.model)
     launches, uncovered = plan(model)
     if args.family:
@@ -944,7 +1007,8 @@ def main(argv=None):
                     coverage_status=model.get('status', 'COMPLETE'), workers=args.workers,
                     command=args.command or 'python ' + ' '.join(shlex.quote(a) for a in [sys.argv[0], *(argv or sys.argv[1:])]),
                     launch_checks=checks(model, launches), unmapped=model.get('unmapped', []), uncovered=uncovered,
-                    notes=args.note)
+                    notes=args.note, backend=(dict(min_tier=args.min_tier, tools=args.backend_tools)
+                                              if args.atlas_mlir_bin else None))
     if args.plan_only:
         rows = [dict(entry, shape=describe(entry), status='planned') for entry in launches]
         document.update(npu_model='not run', wall_seconds=0.0, launches=rows)
