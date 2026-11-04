@@ -25,11 +25,13 @@ dtypes:
   output: fp8_e4m3
 constraints:
   width: "positive multiples of 32 through 7136; pinned resident path for 960 and 2048; streamed standalone path otherwise"
+  logical_width: "must equal physical width; no padded-width divisor or real_n on the streamed path"
+  eps: "fixed at 1e-5"
   rows: 128 (prefill) or 32 (one decode row padded)
 select:
   - op: LlamaRMSNorm
     dtype: "bf16 -> fp8_e4m3"
-    shape: "rows in {1 (padded to 32), 128}, physical width in 32..7136 by 32"
+    shape: "rows in {1 (padded to 32), 128}, logical width = physical width in 32..7136 by 32, eps = 1e-5"
     variant: "gen.py selects the pinned resident or streamed standalone path"
 models:
   - model: tinyllama

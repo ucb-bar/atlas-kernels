@@ -462,7 +462,8 @@ def build_rmsnorm(p, rng, gen):
              + bench.pack_bf16_tiles(np.broadcast_to(gamma_words, (32, width)).copy()) + b'\xa5' * 256)
     return Built(bench.relocate(source), arena, output_offset, output_bytes, expected,
                  lambda raw: bench.fp8_values(bench.unpack_fp8_tiles(raw, m, width), scale), None,
-                 'standalone norm launch (DMA BF16 rows, RMS post-pass, FP8 out)', record, dict(output_scale=scale))
+                 ('streamed tile-row RMSNorm, FP8 out' if record.get('variant') == 'streamed-tile-rows'
+                  else 'standalone norm launch (DMA BF16 rows, RMS post-pass, FP8 out)'), record, dict(output_scale=scale))
 
 
 def attention_mask(p):
@@ -933,12 +934,13 @@ def render(document):
     model, rows = document['model'], document['launches']
     seconds = [row.get(key) or 0 for row in rows for key in ('functional_seconds', 'timed_seconds', 'subset_seconds')]
     job_seconds, longest = sum(seconds), max(seconds, default=0)
-    lines = [f"# {model} kernel bench at model shapes", '',
+    shape_kind = 'synthetic shapes' if model == 'shape_sweep' else 'model shapes'
+    lines = [f"# {model} kernel bench at {shape_kind}", '',
              f"Regenerate: `{document['command']}`", '',
              f"Input: `{document['coverage']}` (SHA-256 `{document['coverage_sha256']}`), coverage status {document['coverage_status']}. "
              f"The coverage derives {len(rows):,} distinct launches; {sum(row['status'] == 'ok' for row in rows):,} executed "
              f"on npu_model `{document['npu_model']}` with numerics=\"rtl\" "
-             f"on seeded synthetic inputs at the model's shape ({document['workers']} worker processes; {job_seconds:,.0f} job-seconds in all, "
+             f"on seeded synthetic inputs at {shape_kind} ({document['workers']} worker processes; {job_seconds:,.0f} job-seconds in all, "
              f"longest job {longest:,.0f} s).", '',
              'Model cycles are npu_model Core cycle-model counts, not RTL cycles. Cycles x count multiplies one launch by the number of '
              'launches in the model; the sums below are device-only estimates that ignore host time, launch overhead, and data '

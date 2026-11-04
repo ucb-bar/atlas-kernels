@@ -31,6 +31,17 @@ def inventory():
                         flops_each=8 * queries * keys * dim, where='atlas:attention', rule=0,
                         launch={'family': 'attention', 'per': {'op': 'aten.scaled_dot_product_attention.default'},
                                 'mask': mask, 'output_fp8': fp8}))
+    # Execute the resident K/V key-capacity limits with one decode query.
+    for dim, keys in ((128, 2048), (256, 1024)):
+        rows.append(dict(
+            phase='validation', module=f'd{dim}_decode_capacity', source='shape-sweep',
+            op='aten.scaled_dot_product_attention.default',
+            inputs=[[[1, 2, 1, dim], 'bfloat16'], [[1, 1, keys, dim], 'bfloat16'],
+                    [[1, 1, keys, dim], 'bfloat16']],
+            outputs=[[[1, 2, 1, dim], 'bfloat16']], count=1,
+            flops_each=8 * keys * dim, where='atlas:attention', rule=0,
+            launch={'family': 'attention', 'per': {'op': 'aten.scaled_dot_product_attention.default'},
+                    'mask': 'causal', 'output_fp8': False}))
     for width in (32, 960, 1024, 2304, 4096, 7136):
         for physical_rows in (32, 128):
             rows.append(dict(
@@ -68,7 +79,7 @@ def main():
         command.extend(['--markdown', str(args.markdown)])
     status = bench_model.main(command)
     document = json.loads((args.out / 'MODEL-BENCH.json').read_text())
-    assert len(document['launches']) == 28
+    assert len(document['launches']) == 30
     for row in document['launches']:
         assert row['status'] == 'ok', row
         assert row['timed_output_equal'], row

@@ -233,7 +233,7 @@ def assembly_wide(config, offsets, *, dram_base=0x90000000):
         f"li x15, {c.kv_heads}", f"li x23, {c.kv_heads * head_bytes}")
     for index, exponent in enumerate((c.q_exponent, c.k_exponent, c.v_exponent)):
         emit(f"seli e{index}, {127 - exponent}")
-    emit("seli e3, 127", f"seli e4, {127 - c.o_exponent}")
+    emit("seli e3, 127")
     for key, size, target in (("descriptors", "descriptor_bytes", 0x3000),
         ("key_counts", "key_count_bytes", 0x4000), ("masks", "mask_bytes", 0x4400)):
         for offset in range(0, offsets[size], 4096):

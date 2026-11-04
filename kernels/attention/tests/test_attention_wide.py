@@ -1,4 +1,4 @@
-"""Wide attention admission, tiled codecs, and exact single-key execution."""
+"""Wide attention admission, tiled codecs, fidelity, and execution agreement."""
 import os
 from pathlib import Path
 import sys
@@ -53,8 +53,8 @@ class WideAttentionExecutionTests(unittest.TestCase):
 
     def single_key_case(self, dim, fp8=False, mask='causal'):
         import kernel_bench as bench
-        # A single visible key makes attention exactly V, independently of QK
-        # and normalization. V varies across every output panel and GQA group.
+        # With Q=K=0, the sole visible key has score zero and yields exactly V.
+        # V varies across every output panel and GQA group.
         c = AttentionWideConfig(1, 1, 4, 2, head_dim=dim, mask=mask, output_fp8=fp8)
         q = np.zeros((4, 1, dim), dtype=np.uint16)
         k = np.zeros((2, 1, dim), dtype=np.uint16)
@@ -96,6 +96,32 @@ class WideAttentionExecutionTests(unittest.TestCase):
         fidelity = bench.fidelity(actual, reference)
         self.assertGreater(fidelity['cosine'], 0.99)
         self.assertLess(fidelity['relative_error'], 0.12)
+
+    def test_small_random_gqa_fidelity_and_exact_timed_agreement(self):
+        import kernel_bench as bench
+        import torch
+        rng = np.random.default_rng(19)
+        words = [bench.bf16_words(rng.standard_normal(shape, dtype=np.float32))
+                 for shape in ((4, 3, 128), (2, 5, 128), (2, 5, 128))]
+        q, k, v = map(bench.bf16_values, words)
+        c = AttentionWideConfig(3, 5, 4, 2, head_dim=128,
+                                q_exponent=bench.fp8_scale(q), k_exponent=bench.fp8_scale(k),
+                                v_exponent=bench.fp8_scale(v))
+        arena, offsets = stage_wide(c, *words)
+        source = assembly_wide(c, offsets)
+        result = self.executor.execute(source, arena, offsets['output'], offsets['output_bytes'])
+        scores = torch.from_numpy(q) @ torch.from_numpy(np.repeat(k, 2, axis=0)).transpose(1, 2)
+        probabilities = torch.softmax(scores * c.scale, -1)
+        # Ensure the seeded operands exercise a nonuniform multi-key softmax.
+        self.assertGreater(float(probabilities.max() - probabilities.min()), 0.1)
+        reference = (probabilities @ torch.from_numpy(np.repeat(v, 2, axis=0))).numpy()
+        actual = bench.bf16_values(unpack_output_wide(c, result.output))
+        fidelity = bench.fidelity(actual, reference)
+        self.assertGreater(fidelity['cosine'], 0.99)
+        self.assertLess(fidelity['relative_error'], 0.12)
+        cycles, timed = bench.timed_cycles(os.environ['ATLAS_NPU_MODEL_ROOT'], source, arena, 1_000_000)
+        self.assertGreater(cycles, 0)
+        self.assertEqual(timed[offsets['output']:offsets['output'] + offsets['output_bytes']], result.output)
 
     def test_timed_256_head_dma_segments_match_exact_functional_result(self):
         from kernel_bench import timed_cycles
