@@ -32,4 +32,6 @@ make gen-smol_fusion NPU_MODEL=/path/to/npu-model ARGS="--shape 128x768x768 --op
 
 ## Tests and checks
 
+Run `make test-lib test-coverage NPU_MODEL=/path/to/npu-model` from the repository root. See [shared test coverage](../../README.md#running-the-tests).
+
 There are no tests in this directory yet. In atlas-mlir, `test/test_smol_fusion_program.py`, `test/test_smol_fp8_producer.py`, and `test/test_smol_fusion_assets.py` check staging, layouts, and relocation, and the SmolVLA fast-build ELF identity check regenerates all 2,715 fast launches (629 distinct programs), fused panels included, through these generators and requires byte-identical ELFs.

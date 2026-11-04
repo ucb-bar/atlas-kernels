@@ -35,4 +35,6 @@ make gen-attention NPU_MODEL=/path/to/npu-model ARGS="--rows 177 --keys 177 --he
 
 ## Tests and checks
 
+Run `make test-lib test-coverage NPU_MODEL=/path/to/npu-model` from the repository root. See [shared test coverage](../../README.md#running-the-tests).
+
 The program check rejects malformed register use at generation time. In atlas-mlir, `test/test_tiny_attention_v2_export.py`, `test/test_smol_fast_attention.py`, and `test/test_atlas_execution.py` (version 1, with `ATLAS_EXECUTION_MODEL_ROOT`) cover staging and execution, and the TinyLlama and SmolVLA capture flows execute every attention launch on npu_model `47b8599` with `numerics="rtl"` (`tools/tiny_full/attention_v2_worker.py`, `tools/capture_smolvla_attention.py --execute`). There is no standalone PyTorch reference test in this repository yet.

@@ -28,4 +28,4 @@ models:
 generator: "make gen-resnet_pool ARGS=\"--input CxHxW\""
 tests: [tests/test_resnet_maxpool.py]
 checks: [geometry tests, execution on npu_model 47b8599 through lib/atlas_rtl_reference.py (needs NPU_MODEL)]
-run_tests: "make test-<family> NPU_MODEL=<npu_model 47b8599 checkout>"
+run_tests: "make test-resnet_pool NPU_MODEL=<npu_model 47b8599 checkout>"

@@ -32,4 +32,4 @@ models:
 generator: "make gen-resnet_patch_gather ARGS=\"--input CxHxW --kernel 1|3 [--stride 2] --n N\""
 tests: [tests/test_resnet_direct_input.py]
 checks: [bounds tests, gather equals host patches on npu_model 47b8599 (needs NPU_MODEL)]
-run_tests: "make test-<family> NPU_MODEL=<npu_model 47b8599 checkout>"
+run_tests: "make test-resnet_patch_gather NPU_MODEL=<npu_model 47b8599 checkout>"

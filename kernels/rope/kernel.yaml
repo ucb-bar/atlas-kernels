@@ -30,6 +30,6 @@ models:
     use: prefill and decode q and k
     shapes: [128x2048x2048, 128x2048x256, 32x2048x2048, 32x2048x256]
 generator: "make gen-rope ARGS=\"--shape MxKxN\""
-tests: []
+tests: [../../lib/tests/test_kernel_manifests.py, ../../lib/tests/test_kernel_bench.py, ../../coverage/tests/test_bench_model.py]
 checks: [no standalone numeric test yet; every TinyLlama RoPE launch executed on npu_model 47b8599 numerics=rtl]
-run_tests: "make test-<family> NPU_MODEL=<npu_model 47b8599 checkout>"
+run_tests: "make test-lib test-projection_gemm test-coverage NPU_MODEL=<npu_model 47b8599 checkout>"

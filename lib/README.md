@@ -21,7 +21,7 @@ Helpers shared by the kernel families, and the references the kernels are checke
 
 ## Compiler backend (`atlas_asm_mlir.py`, `atlas_backend.py`)
 
-The kernel generators emit Atlas assembly text, and npu_model's assembler turns it into the 32-bit words the builds embed. `atlas_backend.py` sends the same text through the Atlas compiler backend in atlas-mlir: it translates it to machine IR, runs the `atlas-opt` verifiers, encodes the words with `atlas-emit`, and refuses any program whose words differ from the assembler's. A backend gap can therefore never change a kernel binary. It shows up as an error or as a lower tier.
+The kernel generators emit Atlas assembly text, and npu_model's assembler turns it into the 32-bit words the builds embed. `lib/atlas_backend.py run --backend atlas-mlir` is an enforcing comparison gate around that assembler path: it translates the same text to machine IR, runs the `atlas-opt` verifiers, encodes the words with `atlas-emit`, and refuses any program whose words differ from the assembler's. The wrapper returns the assembler-produced program. A backend gap shows up as an error or as a lower tier.
 
 ### Tiers
 

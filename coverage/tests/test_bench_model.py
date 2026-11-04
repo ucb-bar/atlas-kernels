@@ -146,6 +146,7 @@ class PlanTest(unittest.TestCase):
                     return subprocess.CompletedProcess(command, 0, stdout='', stderr='')
 
                 with mock.patch.object(bench_model.subprocess, 'run', side_effect=rerun) as process, \
+                        mock.patch.object(bench_model, 'cache_context', return_value={}), \
                         mock.patch('builtins.print'):
                     results = bench_model.execute([entry], args)
                 self.assertEqual(process.call_count, 2)
@@ -178,6 +179,7 @@ class PlanTest(unittest.TestCase):
                     raise subprocess.TimeoutExpired(command, kwargs['timeout'])
 
                 with mock.patch.object(bench_model.subprocess, 'run', side_effect=timeout), \
+                        mock.patch.object(bench_model, 'cache_context', return_value={}), \
                         mock.patch('builtins.print'):
                     results = bench_model.execute([entry], args)
                 self.assertEqual(set(results[entry['key']]), {'functional', 'timed'})
@@ -190,9 +192,150 @@ class PlanTest(unittest.TestCase):
                         self.assertEqual(result['status'], 'error')
                         self.assertIn('before compiler verification completed', result['error'])
 
+    def test_resume_rebuilds_and_rejects_stale_cache_closure(self):
+        entry = dict(key='projection_gemm:closure', family='projection_gemm', params={})
+        context = dict(implementation='staging-v1', model='model-v1', compiler='policy-v1')
+        staged = dict(words_sha256='words-v1', arena_sha256='arena-v1')
+        cases = ('match', 'words', 'arena', 'implementation', 'model', 'compiler', 'legacy', 'timeout',
+                 'negative-match', 'negative-implementation', 'negative-now-supported')
+        for case in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as tmp:
+                args = SimpleNamespace(out=Path(tmp), resume=True, atlas_mlir_bin=None,
+                                       min_tier='stream-verified', backend_tools=None, model_root=Path(tmp) / 'model',
+                                       workers=1, max_cycles=100, max_instructions=100, job_timeout=1, subset_after=1)
+                jobs = args.out / 'jobs'
+                jobs.mkdir()
+                for mode in ('functional', 'timed'):
+                    name = hashlib.sha256((entry['key'] + mode).encode()).hexdigest()[:16]
+                    binding = bench_model.cache_binding(entry, mode, copy.deepcopy(context), 100, 100, 1)
+                    if case in ('implementation', 'model', 'compiler', 'negative-implementation'):
+                        binding['context'][case.removeprefix('negative-')] = 'stale'
+                    cached = dict(key=entry['key'], mode=mode, cache_binding=binding, cache_identity=staged,
+                                  status='no-variant' if case.startswith('negative') else 'ok',
+                                  error='unsupported', output_sha256='historical-output')
+                    if case == 'legacy':
+                        cached.pop('cache_binding')
+                    if case == 'timeout':
+                        cached['status'] = 'timeout'
+                        binding['timeout'] = 0.5
+                    (jobs / f'{name}.{mode}.json').write_text(json.dumps(cached))
+
+                reruns, checks = [], []
+
+                def subprocess_job(command, **kwargs):
+                    mode = command[command.index('--mode') + 1]
+                    destination = Path(command[command.index('--result') + 1])
+                    identity = copy.deepcopy(staged)
+                    if case in ('words', 'arena'):
+                        identity[case + '_sha256'] = 'changed'
+                    binding = bench_model.cache_binding(entry, mode, context, 100, 100, 1)
+                    result = dict(key=entry['key'], mode=mode, cache_binding=binding,
+                                  cache_identity=identity, status='identity', error='unsupported')
+                    if '--identity-only' in command:
+                        checks.append(mode)
+                        if case in ('negative-match',):
+                            result['status'] = 'no-variant'
+                    else:
+                        reruns.append(mode)
+                        result.update(status='ok', output_sha256='fresh-output')
+                    destination.write_text(json.dumps(result))
+                    return subprocess.CompletedProcess(command, 0, stdout='', stderr='')
+
+                with mock.patch.object(bench_model, 'cache_context', return_value=context), \
+                        mock.patch.object(bench_model.subprocess, 'run', side_effect=subprocess_job), \
+                        mock.patch('builtins.print'):
+                    results = bench_model.execute([entry], args)
+                reused = case in ('match', 'negative-match')
+                self.assertEqual(len(reruns), 0 if reused else 2)
+                self.assertEqual(len(checks), 2 if case in ('match', 'words', 'arena', 'negative-match',
+                                                         'negative-now-supported') else 0)
+                if reused:
+                    self.assertTrue(all(r['output_sha256'] == 'historical-output' for r in results[entry['key']].values()))
+                else:
+                    self.assertTrue(all(r['output_sha256'] == 'fresh-output' for r in results[entry['key']].values()))
+
+    def test_source_closure_tracks_golden_and_model_data_changes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'reference.py').write_text('golden = 1\n')
+            (root / 'table.bin').write_bytes(b'lookup-v1')
+            original = bench_model.source_identity(root)
+            (root / 'reference.py').write_text('golden = 2\n')
+            changed_golden = bench_model.source_identity(root)
+            self.assertNotEqual(original, changed_golden)
+            (root / 'table.bin').write_bytes(b'lookup-v2')
+            self.assertNotEqual(changed_golden, bench_model.source_identity(root))
+            (root / 'link.py').symlink_to(root / 'reference.py')
+            with self.assertRaisesRegex(ValueError, 'symbolic links'):
+                bench_model.source_identity(root)
+            (root / 'link.py').unlink()
+            before = bench_model.source_identity(root)
+            (root / '__pycache__').mkdir()
+            (root / '__pycache__' / 'cached.pyc').write_bytes(b'ignored')
+            self.assertEqual(before, bench_model.source_identity(root))
+
+    def test_render_preserves_reuse_beside_totals_and_timeout_provenance(self):
+        entry = dict(key='attention:timeout-provenance', family='attention', count=24, params=dict(
+            rows=1024, keys=1024, heads=12, kv_heads=12, head_dim=64, mask='none', output_fp8=False),
+            modules=[], dtypes=['float32'])
+        note = 'timeout marker reconstructed from bench-smolvla.log after the merge crash (retained log: 1,200.1 s)'
+        results = {entry['key']: dict(functional=dict(status='ok', seconds=1),
+                                     timed=dict(status='timeout', seconds=1200.1, note=note),
+                                     subset=dict(rows=128, factor=8, result=dict(status='ok', model_cycles=5)))}
+        rows = bench_model.merge([entry], results)
+        self.assertEqual(rows[0]['timed_provenance_note'], note)
+        document = dict(model='smolvla', command='test', coverage='coverage.json', coverage_sha256='test',
+                        coverage_status='COMPLETE', npu_model='test', workers=1, launch_checks=[],
+                        launches=rows, unmapped=[], uncovered=[], reuse_proof=dict(path='reuse-proof.json',
+                            sha256='7745da6b8410d7fb6a2456e4699af8c048f340be4d51be47521208d5bec1437f'))
+        report = bench_model.render(document)
+        summary = report.split('## Summary', 1)[1].split('Compiler tier counts', 1)[0]
+        self.assertIn('includes 24 estimated launches', summary)
+        self.assertIn('zero functional or timed bench jobs were rerun', summary)
+        self.assertIn('`reuse-proof.json` beside the generated JSON', summary)
+        self.assertIn(note, report)
+        # The retained report lacks the timed-job note, so only its exact historical proof enables the fallback.
+        rows[0].pop('timed_provenance_note')
+        document['reuse_proof']['sha256'] = '7745da6b8410d7fb6a2456e4699af8c048f340be4d51be47521208d5bec1437f'
+        self.assertIn(note, bench_model.render(document))
+        document['reuse_proof']['sha256'] = 'unrelated-proof'
+        unrelated = bench_model.render(document)
+        self.assertNotIn('timeout marker reconstructed', unrelated)
+        self.assertNotIn('zero functional or timed bench jobs were rerun', unrelated)
+
 
 @unittest.skipUnless(CAN_RUN, 'needs NumPy, PyTorch, and npu_model (ATLAS_NPU_MODEL_ROOT)')
 class RunTest(unittest.TestCase):
+    def test_resume_regenerates_identity_and_reruns_stale_words(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'coverage.json'
+            path.write_text(json.dumps(toy_model()))
+            out = Path(tmp) / 'out'
+            command = ['--coverage', str(path), '--model-root', MODEL_ROOT, '--out', str(out),
+                       '--workers', '1', '--family', 'projection_gemm']
+            with mock.patch('builtins.print'):
+                self.assertEqual(bench_model.main(command), 0)
+            real_subprocess = bench_model.subprocess.run
+            with mock.patch.object(bench_model.subprocess, 'run', wraps=real_subprocess) as process, \
+                    mock.patch('builtins.print'):
+                self.assertEqual(bench_model.main([*command, '--resume']), 0)
+            jobs = [call.args[0] for call in process.call_args_list if '--job' in call.args[0]]
+            self.assertEqual(len(jobs), 2)
+            self.assertTrue(all('--identity-only' in job for job in jobs))
+            functional, = (out / 'jobs').glob('*.functional.json')
+            cached = json.loads(functional.read_text())
+            cached['cache_identity']['words_sha256'] = 'stale'
+            functional.write_text(json.dumps(cached))
+            with mock.patch.object(bench_model.subprocess, 'run', wraps=real_subprocess) as process, \
+                    mock.patch('builtins.print'):
+                self.assertEqual(bench_model.main([*command, '--resume']), 0)
+            jobs = [call.args[0] for call in process.call_args_list if '--job' in call.args[0]]
+            self.assertEqual(len(jobs), 3)
+            rerun, = [job for job in jobs if '--identity-only' not in job]
+            self.assertEqual(rerun[rerun.index('--mode') + 1], 'functional')
+            repaired = json.loads(functional.read_text())
+            self.assertNotEqual(repaired['cache_identity']['words_sha256'], 'stale')
+
     def test_runs_reports_no_variant_and_unmapped(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'coverage.json'

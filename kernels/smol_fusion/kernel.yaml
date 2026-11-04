@@ -35,6 +35,6 @@ models:
     use: vision fc1 bias and GELU with FP8 output (192 fused panels in the fc1-bias-gelu-fp8 fusion set); default builds run bias and GELU on the host
     shapes: [128x768x3072]
 generator: "make gen-smol_fusion ARGS=\"--shape MxKxN --operations bias,gelu_tanh | --fp8\""
-tests: []
+tests: [../../lib/tests/test_kernel_manifests.py, ../../lib/tests/test_kernel_bench.py, ../../coverage/tests/test_bench_model.py]
 checks: ["atlas-mlir test/test_smol_fusion_program.py, test_smol_fp8_producer.py, test_smol_fusion_assets.py", Smol fast-build ELF identity regenerates every fused panel through these generators]
-run_tests: "make test-<family> NPU_MODEL=<npu_model 47b8599 checkout>"
+run_tests: "make test-lib test-coverage NPU_MODEL=<npu_model 47b8599 checkout>"

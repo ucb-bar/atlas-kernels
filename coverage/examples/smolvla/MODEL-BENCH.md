@@ -21,6 +21,8 @@ Compiler backend: machine IR, atlas-opt stream and timing verifiers, and atlas-e
 
 Device cycle estimate (sum of model cycles x count over 2,915 of 2,915 launches): 5,560,633,884 (includes 24 estimated launches) npu_model model cycles. It ignores host time and launch overhead. 24 of those launches use a row-subset estimate (`attention` 1024x1024 12/12 d64 none).
 
+These totals include historically reused functional and timed results; zero functional or timed bench jobs were rerun for this retained report. Reconstructed staging, program-word checks, and per-job result hashes are recorded in `reuse-proof.json` beside the generated JSON.
+
 Compiler tier counts by distinct launch: 27 `stream-verified`, 1 `verified`.
 
 | launch kind | launches | launches with cycles | model cycles x count | share |
@@ -47,7 +49,7 @@ Top shapes by total cycles:
 Unsupported or failed launches: 0.
 
 Shapes that took more than 20 minutes on npu_model:
-- `attention` 1024x1024 12/12 d64 none: functional 1037.7 s, timed 1200.1 s; timed run exceeded 1200 s; cycles: estimate: 128-row subset (5,344,677 cycles) x 8
+- `attention` 1024x1024 12/12 d64 none: functional 1037.7 s, timed 1200.1 s; timed run exceeded 1200 s; cycles: estimate: 128-row subset (5,344,677 cycles) x 8; timeout provenance: timeout marker reconstructed from bench-smolvla.log after the merge crash (retained log: 1,200.1 s)
 - `projection_gemm` 64x12288x960: functional 1053.9 s, timed 1658.9 s; completed; cycles: full launch
 
 ## Launches

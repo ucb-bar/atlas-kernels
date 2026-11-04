@@ -41,6 +41,6 @@ models:
     use: BF16 output
     shapes: [1024x1024 vision 12/12, 177x177 prefix 15/5, 50x227 and 50x177 expert 15/5]
 generator: "make gen-attention ARGS=\"--rows R --keys K --heads Q/KV [--causal] [--query-start S] [--fp8]\""
-tests: []
+tests: [../../lib/tests/test_kernel_manifests.py, ../../lib/tests/test_kernel_bench.py, ../../coverage/tests/test_bench_model.py]
 checks: [check_program_v2 static check, SHA-pinned by atlas-mlir tools/tiny_full/attention_v2_worker.py, every TinyLlama and SmolVLA attention launch executed on npu_model 47b8599 numerics=rtl]
-run_tests: "make test-<family> NPU_MODEL=<npu_model 47b8599 checkout>"
+run_tests: "make test-lib test-coverage NPU_MODEL=<npu_model 47b8599 checkout>"

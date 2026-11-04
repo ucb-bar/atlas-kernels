@@ -47,6 +47,6 @@ models:
   - model: resnet50
     use: "captured mul, add, and relu hooks through legacy_epilogue_assembly"
 generator: "make gen-epilogue ARGS=\"--shape MxKxN --steps silu[,mul,...] [--fp8]\""
-tests: [../projection_gemm/tests/test_program_checks.py, ../projection_gemm/tests/test_program_legacy_epilogue.py]
+tests: [../../lib/tests/test_kernel_manifests.py, ../../lib/tests/test_kernel_bench.py, ../../coverage/tests/test_bench_model.py, ../projection_gemm/tests/test_program_checks.py, ../projection_gemm/tests/test_program_legacy_epilogue.py]
 checks: [checked_assembly hook footprint, TinyLlama fused launches executed on npu_model 47b8599 numerics=rtl in atlas-mlir export]
-run_tests: "make test-<family> NPU_MODEL=<npu_model 47b8599 checkout>"
+run_tests: "make test-lib test-projection_gemm test-coverage NPU_MODEL=<npu_model 47b8599 checkout>"

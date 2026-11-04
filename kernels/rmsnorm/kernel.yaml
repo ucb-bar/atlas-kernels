@@ -35,4 +35,4 @@ models:
 generator: "make gen-rmsnorm ARGS=\"--rows 128|32\""
 tests: [tests/test_norm_postpass.py]
 checks: [register hygiene test, every TinyLlama norm launch executed on npu_model 47b8599 numerics=rtl in atlas-mlir export]
-run_tests: "make test-<family> NPU_MODEL=<npu_model 47b8599 checkout>"
+run_tests: "make test-rmsnorm NPU_MODEL=<npu_model 47b8599 checkout>"

@@ -21,6 +21,8 @@ Compiler backend: machine IR, atlas-opt stream and timing verifiers, and atlas-e
 
 Device cycle estimate (sum of model cycles x count over 2 of 8 launches): 17,617 npu_model model cycles. It ignores host time and launch overhead.
 
+These totals include historically reused functional and timed results; zero functional or timed bench jobs were rerun for this retained report. Reconstructed staging, program-word checks, and per-job result hashes are recorded in `reuse-proof.json` beside the generated JSON.
+
 Compiler tier counts by distinct launch: 2 `verified`.
 
 | launch kind | launches | launches with cycles | model cycles x count | share |

@@ -34,6 +34,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from fnmatch import fnmatchcase
 import hashlib
+from importlib import metadata
 import json
 import os
 from pathlib import Path
@@ -604,6 +605,82 @@ def program_identity(built, atlas_mlir_bin=None, min_tier='stream-verified'):
     return result
 
 
+def checked_source(path):
+    path = Path(path).absolute()
+    if any(any(word in part.lower() for word in ('hammer', 'vlsi')) for part in path.parts):
+        raise ValueError('excluded source path')
+    if any(candidate.is_symlink() for candidate in (*reversed(path.parents), path)):
+        raise ValueError('source identity requires a path without symbolic links')
+    return path
+
+
+def source_identity(root, python_only=False):
+    """Hash source bytes, pruning excluded names and links before walking their descendants."""
+    root = checked_source(root)
+    excluded = lambda name: any(word in name.lower() for word in ('hammer', 'vlsi'))  # noqa: E731
+    if not root.is_dir():
+        raise ValueError('missing source directory: ' + str(root))
+    sources = {}
+    for directory, names, files in os.walk(root, followlinks=False):
+        retained = []
+        for name in sorted(names):
+            if excluded(name) or name in ('.git', '__pycache__', '.pytest_cache'):
+                continue
+            if (Path(directory) / name).is_symlink():
+                raise ValueError('source identity requires directories without symbolic links')
+            retained.append(name)
+        names[:] = retained
+        for name in sorted(files):
+            if excluded(name) or name.endswith(('.pyc', '.pyo')) or (python_only and not name.endswith('.py')):
+                continue
+            path = Path(directory) / name
+            if path.is_symlink():
+                raise ValueError('source identity requires files without symbolic links')
+            if not path.is_file():
+                continue
+            sources[str(path.relative_to(root))] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return hashlib.sha256(json.dumps(sources, sort_keys=True).encode()).hexdigest()
+
+
+def cache_context(model_root, atlas_mlir_bin=None, min_tier='stream-verified', tools=None):
+    """Bind staging, golden/fidelity, generators, model code/data, runtime, and compiler policy."""
+    packages = {}
+    for name in ('numpy', 'torch'):
+        try:
+            packages[name] = metadata.version(name)
+        except metadata.PackageNotFoundError:
+            packages[name] = None
+    model_root = checked_source(model_root)
+    revision = subprocess.run(['git', '-C', str(model_root), 'rev-parse', 'HEAD'],
+                              capture_output=True, text=True, check=True).stdout.strip()
+    return dict(schema='atlas.model_bench.cache.v1',
+                implementation={str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
+                                for path in (Path(__file__).absolute(), ROOT / 'atlas_kernels_path.py')},
+                library=source_identity(ROOT / 'lib', python_only=True),
+                generators=source_identity(ROOT / 'kernels', python_only=True),
+                model=dict(root=str(model_root), revision=revision, sources=source_identity(model_root / 'npu_model')),
+                runtime=dict(python=sys.version, executable=sys.executable, packages=packages),
+                compiler=dict(enabled=atlas_mlir_bin is not None, min_tier=min_tier, tools=tools))
+
+
+def cache_binding(entry, mode, context, max_cycles, max_instructions, timeout=None):
+    return dict(context=context, key=entry['key'], family=entry['family'], params=entry.get('params'),
+                mode=mode, max_cycles=max_cycles, max_instructions=max_instructions, timeout=timeout)
+
+
+def staged_identity(built, identity):
+    """Keep the deterministic executable/input/output layout separate from diagnostic text."""
+    fields = ('source_sha256', 'words_sha256', 'program_words', 'arena_sha256', 'arena_bytes')
+    helpers = {}
+    for name in ('run_model_tile', 'chipyard', 'chipyard.arena'):
+        filename = getattr(sys.modules.get(name), '__file__', None)
+        if filename:
+            path = checked_source(filename)
+            helpers[name] = dict(path=str(path), sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+    return dict({key: identity[key] for key in fields}, output_offset=built.output_offset,
+                output_bytes=built.output_bytes, staging_helpers=helpers)
+
+
 def write_job_result(path, result):
     """Publish a complete checkpoint or result even when the worker is about to time out."""
     path = Path(path)
@@ -613,7 +690,7 @@ def write_job_result(path, result):
 
 
 def run_job(entry, mode, model_root, work, max_cycles, max_instructions, atlas_mlir_bin=None,
-            min_tier='stream-verified', checkpoint=None):
+            min_tier='stream-verified', checkpoint=None, identity_only=False, timeout=None):
     """One functional or timed execution of one launch; returns a result dict (never raises for NoVariant)."""
     os.environ.setdefault('OMP_NUM_THREADS', '1')
     sys.path.insert(0, str(model_root))
@@ -622,7 +699,12 @@ def run_job(entry, mode, model_root, work, max_cycles, max_instructions, atlas_m
     import torch
     torch.set_num_threads(1)
     import kernel_bench as bench
-    result = dict(key=entry['key'], mode=mode)
+    tools = None
+    if atlas_mlir_bin is not None:
+        import atlas_backend
+        tools = atlas_backend.tools(atlas_mlir_bin).identity()
+    result = dict(key=entry['key'], mode=mode, cache_binding=cache_binding(
+        entry, mode, cache_context(model_root, atlas_mlir_bin, min_tier, tools), max_cycles, max_instructions, timeout))
     started = time.perf_counter()
     try:
         built = build(entry, work, model_root)
@@ -632,6 +714,9 @@ def run_job(entry, mode, model_root, work, max_cycles, max_instructions, atlas_m
                   meta=built.meta)
     try:
         result.update(program_identity(built, atlas_mlir_bin, min_tier))
+        result['cache_identity'] = staged_identity(built, result)
+        if identity_only:
+            return dict(result, status='identity')
         if checkpoint is not None:
             # Preserve the verified program identity if the parent terminates a slow timed execution.
             write_job_result(checkpoint, dict(result, status='running'))
@@ -660,7 +745,7 @@ def run_job(entry, mode, model_root, work, max_cycles, max_instructions, atlas_m
 def job_main(args):
     entry = json.loads(Path(args.job).read_text())
     result = run_job(entry, args.mode, args.model_root, Path(args.job).parent, args.max_cycles, args.max_instructions,
-                     args.atlas_mlir_bin, args.min_tier, args.result)
+                     args.atlas_mlir_bin, args.min_tier, args.result, args.identity_only, args.job_timeout)
     write_job_result(args.result, result)
     return 0
 
@@ -681,10 +766,18 @@ def execute(launches, args):
     work = args.out / 'jobs'
     work.mkdir(parents=True, exist_ok=True)
     results = defaultdict(dict)
+    context = cache_context(args.model_root, args.atlas_mlir_bin, args.min_tier, args.backend_tools)
 
     def one(entry, mode, timeout):
         name = hashlib.sha256((entry['key'] + mode).encode()).hexdigest()[:16]
         job, out = work / f'{name}.job.json', work / f'{name}.{mode}.json'
+        job.write_text(json.dumps(entry) + '\n')
+        command = [sys.executable, '-B', str(Path(__file__).absolute()), '--job', str(job), '--mode', mode,
+                   '--result', str(out), '--model-root', str(args.model_root), '--max-cycles', str(args.max_cycles),
+                   '--max-instructions', str(args.max_instructions), '--job-timeout', str(timeout)]
+        if args.atlas_mlir_bin:
+            command += ['--atlas-mlir-bin', str(args.atlas_mlir_bin), '--min-tier', args.min_tier]
+        environment = dict(os.environ, OMP_NUM_THREADS='1', PYTHONDONTWRITEBYTECODE='1')
         if args.resume and out.exists():
             cached = json.loads(out.read_text())
             backend = cached.get('backend')
@@ -693,17 +786,28 @@ def execute(launches, args):
             policy_matches = (not args.atlas_mlir_bin and not backend) or (args.atlas_mlir_bin and backend and
                               backend.get('tier') in allowed_tiers[:allowed_tiers.index(args.min_tier) + 1] and
                               backend.get('min_tier') == args.min_tier and backend.get('tools') == args.backend_tools)
-            if cached.get('status') == 'no-variant' or (cached.get('status') in ('ok', 'timeout') and policy_matches):
-                return entry, mode, cached
-        job.write_text(json.dumps(entry) + '\n')
+            binding = cache_binding(entry, mode, context, args.max_cycles, args.max_instructions, timeout)
+            if cached.get('cache_binding') == binding and (cached.get('status') == 'no-variant' or
+                    (cached.get('status') in ('ok', 'timeout') and policy_matches and cached.get('cache_identity'))):
+                # Regeneration checks assembled words and input bytes even when implementation hashes match.
+                identity_out = work / f'{name}.{mode}.identity.json'
+                identity_out.unlink(missing_ok=True)
+                identity_command = list(command)
+                identity_command[identity_command.index('--result') + 1] = str(identity_out)
+                try:
+                    process = subprocess.run([*identity_command, '--identity-only'], capture_output=True,
+                                             text=True, timeout=timeout, env=environment)
+                    fresh = json.loads(identity_out.read_text()) if not process.returncode and identity_out.exists() else {}
+                except (subprocess.TimeoutExpired, ValueError):
+                    fresh = {}
+                if fresh.get('cache_binding') == binding and (
+                        cached['status'] == 'no-variant' and fresh.get('status') == 'no-variant'
+                        and fresh.get('error') == cached.get('error') or
+                        cached['status'] in ('ok', 'timeout') and fresh.get('status') == 'identity'
+                        and cached.get('cache_identity') == fresh.get('cache_identity')):
+                    return entry, mode, cached
         out.unlink(missing_ok=True)
-        command = [sys.executable, '-B', str(Path(__file__).absolute()), '--job', str(job), '--mode', mode,
-                   '--result', str(out), '--model-root', str(args.model_root), '--max-cycles', str(args.max_cycles),
-                   '--max-instructions', str(args.max_instructions)]
-        if args.atlas_mlir_bin:
-            command += ['--atlas-mlir-bin', str(args.atlas_mlir_bin), '--min-tier', args.min_tier]
         started = time.perf_counter()
-        environment = dict(os.environ, OMP_NUM_THREADS='1', PYTHONDONTWRITEBYTECODE='1')
         try:
             process = subprocess.run(command, capture_output=True, text=True, timeout=timeout, env=environment)
         except subprocess.TimeoutExpired:
@@ -770,6 +874,8 @@ def merge(launches, results):
                        timed_output_equal=timed.get('output_sha256') == functional.get('output_sha256') if functional.get('status') == 'ok' else None)
         elif timed.get('status') == 'timeout':
             row['timed_note'] = f"timed run exceeded {timed['seconds']:.0f} s"
+            if timed.get('note'):
+                row['timed_provenance_note'] = timed['note']
             done = (part or {}).get('result', {})
             if done.get('status') == 'ok':
                 row.update(model_cycles=done['model_cycles'] * part['factor'], timed_output_equal=None,
@@ -863,6 +969,16 @@ def render(document):
               + ', '.join(f"`{r['family']}` {r['shape']}" for r in estimated) + ').') if estimated else ''
     lines += ['## Summary', '', f"Device cycle estimate (sum of model cycles x count over {sum(r['count'] for r in ok):,} of "
               f"{sum(r['count'] for r in rows):,} launches): {total_label} npu_model model cycles. It ignores host time and launch overhead.{caveat}", '']
+    if document.get('reuse_proof'):
+        proof = document['reuse_proof']['path']
+        retained = document['reuse_proof'].get('sha256') in (
+            'a4fee0b4f03633063d758880ef44e4f50156de9d4a8bffee14ade4a70c7f515f',
+            '7745da6b8410d7fb6a2456e4699af8c048f340be4d51be47521208d5bec1437f',
+            '5a4a685e3467b80d2b1d9ce20806dcf554c9f2aa233d90d400253c86b1b7573d')
+        freshness = '; zero functional or timed bench jobs were rerun for this retained report' if retained else ''
+        lines += [f"These totals include historically reused functional and timed results{freshness}. "
+                  f"Reconstructed staging, program-word checks, and per-job result hashes are recorded in "
+                  f"`{proof}` beside the generated JSON.", '']
     tiers = Counter(row['backend']['tier'] for row in rows if row.get('backend'))
     lines += ['Compiler tier counts by distinct launch: ' + (', '.join(f'{count:,} `{tier}`' for tier, count in sorted(tiers.items()))
               if tiers else 'none') + '.', '',
@@ -882,8 +998,17 @@ def render(document):
     if estimates or slow:
         lines += ['', 'Shapes that took more than 20 minutes on npu_model:']
         for row in sorted({id(r): r for r in estimates + slow}.values(), key=lambda r: r['key']):
+            provenance = row.get('timed_provenance_note')
+            if (not provenance and document.get('reuse_proof', {}).get('sha256') ==
+                    '7745da6b8410d7fb6a2456e4699af8c048f340be4d51be47521208d5bec1437f'
+                    and model == 'smolvla' and row['family'] == 'attention' and row.get('timed_note')
+                    and row.get('params', {}).get('rows') == 1024 and row['params'].get('keys') == 1024):
+                provenance = ('timeout marker reconstructed from bench-smolvla.log after the merge crash '
+                              '(retained log: 1,200.1 s)')
+            suffix = f"; timeout provenance: {provenance.rstrip('.')}" if provenance else ''
             lines.append(f"- `{row['family']}` {row['shape']}: functional {row.get('functional_seconds')} s, timed "
-                         f"{row.get('timed_seconds')} s; {row.get('timed_note', 'completed')}; cycles: {row.get('cycles_source', 'none')}")
+                         f"{row.get('timed_seconds')} s; {row.get('timed_note', 'completed')}; "
+                         f"cycles: {row.get('cycles_source', 'none')}{suffix}")
     lines.append('')
     lines += ['## Launches', '', '| family | shape | export dtype | variant | tier | words | count | model cycles | cycles x count | golden | '
               'bit-exact | timed equals functional | cosine | rel-err | modules |',
@@ -998,6 +1123,7 @@ def main(argv=None):
     parser.add_argument('--job', help=argparse.SUPPRESS)
     parser.add_argument('--mode', help=argparse.SUPPRESS)
     parser.add_argument('--result', help=argparse.SUPPRESS)
+    parser.add_argument('--identity-only', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.job:
         return job_main(args)

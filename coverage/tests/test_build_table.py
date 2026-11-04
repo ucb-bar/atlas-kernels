@@ -19,6 +19,64 @@ except ImportError:
 
 @unittest.skipUnless(yaml, 'build_table.py requires PyYAML')
 class BuildTableTest(unittest.TestCase):
+    def test_capture_failure_fails_cli_and_not_run_is_distinct(self):
+        inventory = json.loads((COVERAGE / 'fixture' / 'tinyllama.json').read_text())
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / 'inventory.json'
+            command = [sys.executable, '-B', str(COVERAGE / 'build_table.py'), '--inventory',
+                       f'tinyllama={path}', '--out', str(root / 'report'), '--allow-unmapped']
+            inventory['capture_crosscheck']['status'] = 'FAIL'
+            path.write_text(json.dumps(inventory))
+            failed = subprocess.run(command, capture_output=True, text=True)
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertIn('capture cross-check FAIL', failed.stderr)
+            self.assertFalse((root / 'report').exists())
+            for status in ('NOT_RUN', 'PASS'):
+                inventory['capture_crosscheck']['status'] = status
+                path.write_text(json.dumps(inventory))
+                passed = subprocess.run(command, check=True, capture_output=True, text=True)
+                report = json.loads((root / 'report' / 'coverage.json').read_text())
+                self.assertEqual(report['models']['tinyllama']['capture_crosscheck'], status)
+                self.assertIn(f'capture {status}', passed.stdout)
+                self.assertIn(f'Merlin capture cross-check: {status}',
+                              (root / 'report' / 'COVERAGE.md').read_text())
+
+    def test_citations_require_destinations_and_family_manifests(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            roots = [root / repo for repo in ('atlas-mlir', 'merlin', 'atlas-kernels')]
+            for path in roots:
+                path.mkdir()
+            mapping = {'kernels': {'attention': 'attention'}, 'rules': {'example': [
+                {'where': 'host:atlas-mlir/missing.c', 'bias_where': 'build:merlin/missing.py'},
+                {'where': 'atlas:attention'},
+            ]}}
+            expected = ['atlas-kernels:kernels/attention/kernel.yaml family attention',
+                        'build:merlin/missing.py', 'host:atlas-mlir/missing.c']
+            self.assertEqual(build_table.check_cites(mapping, roots), expected)
+            (roots[0] / 'missing.c').touch()
+            (roots[1] / 'missing.py').touch()
+            manifest = roots[2] / 'kernels' / 'attention' / 'kernel.yaml'
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text('family: wrong\n')
+            self.assertEqual(build_table.check_cites(mapping, roots), expected[:1])
+            manifest.write_text('family: attention\n')
+            self.assertEqual(build_table.check_cites(mapping, roots), [])
+            mapping['rules']['example'][0]['where'] = 'host:unknown/missing.c'
+            self.assertEqual(build_table.check_cites(mapping, roots), ['host:unknown/missing.c'])
+
+    def test_explicit_missing_citation_checkouts_fail_cli(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            failed = subprocess.run([sys.executable, '-B', str(COVERAGE / 'build_table.py'),
+                                     '--out', str(root / 'report'), '--check-cites',
+                                     str(root / 'missing'), str(root / 'missing'), str(COVERAGE.parent)],
+                                    capture_output=True, text=True)
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertIn('missing cited file', failed.stderr)
+            self.assertFalse((root / 'report').exists())
+
     def test_committed_table_is_current(self):
         with tempfile.TemporaryDirectory() as out:
             subprocess.run([sys.executable, '-B', str(COVERAGE / 'build_table.py'), '--out', out], check=True,

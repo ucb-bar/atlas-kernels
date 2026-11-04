@@ -26,4 +26,6 @@ make gen-rne_add NPU_MODEL=/path/to/npu-model   # the sequence on one register p
 
 ## Tests and checks
 
+Run `make test-lib test-projection_gemm test-coverage NPU_MODEL=/path/to/npu-model` from the repository root. See [shared test coverage](../../README.md#running-the-tests).
+
 There is no standalone numeric unit test yet. Exactness is established by executing every TinyLlama launch that uses it on npu_model `47b8599` with `numerics="rtl"` (atlas-mlir `tools/tiny_full/export_capture.py --qualify-launches`), and register admission is covered by `kernels/projection_gemm/tests/test_program_checks.py`.

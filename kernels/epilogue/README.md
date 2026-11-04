@@ -36,4 +36,6 @@ make gen-epilogue NPU_MODEL=/path/to/npu-model ARGS="--shape 128x2048x2048 --ste
 
 ## Tests and checks
 
+Run `make test-lib test-projection_gemm test-coverage NPU_MODEL=/path/to/npu-model` from the repository root. See [shared test coverage](../../README.md#running-the-tests).
+
 `checked_assembly` (`lib/atlas_program_checks.py`) admits a hook only when the recipe names none of the registers it writes; `kernels/projection_gemm/tests/test_program_checks.py` and `test_program_legacy_epilogue.py` cover every recipe with hooks. In atlas-mlir, `test/test_tiny_fusion.py` and the Smol fusion tests check staged layouts, and the capture flows execute every fused launch on npu_model `47b8599`.

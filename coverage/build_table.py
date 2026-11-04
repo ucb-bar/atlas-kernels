@@ -135,20 +135,39 @@ def gflop(value):
 def check_cites(mapping, roots):
     missing = []
     names = dict(zip(('atlas-mlir', 'merlin', 'atlas-kernels'), roots))
+
+    def exists(repo, path):
+        # Reject unsafe components before touching a destination or following a link.
+        relative = Path(path)
+        if repo not in names or not path or relative.is_absolute() or '..' in relative.parts:
+            return False
+        root = Path(names[repo])
+        current = root
+        for part in relative.parts:
+            if any(word in part.lower() for word in ('hammer', 'vlsi')):
+                return False
+            current = current / part
+            if current.is_symlink():
+                return False
+        return current.is_file()
+
+    for repo, root in names.items():
+        if not Path(root).is_dir():
+            missing.append(f'{repo}: checkout {root}')
     for rules in mapping['rules'].values():
         for rule in rules:
             for cite in rule.get('cite', []):
                 repo, _, rest = cite.partition(':')
-                if repo in names and not (Path(names[repo]) / rest.split(':')[0]).is_file():
+                if not exists(repo, rest.split(':')[0]):
                     missing.append(cite)
             for where in (rule['where'], rule.get('bias_where', rule['where'])):
                 kind, _, target = where.partition(':')
                 repo, _, path = target.partition('/')
-                if kind in ('host', 'build') and not (Path(names[repo]) / path).is_file():
+                if kind in ('host', 'build') and not exists(repo, path):
                     missing.append(where)
     for family in mapping['kernels']:
         manifest = Path(names['atlas-kernels']) / 'kernels' / family / 'kernel.yaml'
-        if not manifest.is_file() or yaml.safe_load(manifest.read_text()).get('family') != family:
+        if not exists('atlas-kernels', f'kernels/{family}/kernel.yaml') or yaml.safe_load(manifest.read_text()).get('family') != family:
             missing.append(f'atlas-kernels:kernels/{family}/kernel.yaml family {family}')
     return sorted(set(missing))
 
@@ -192,6 +211,9 @@ def main():
     for model, path in inventories.items():
         column = MODELS.get(model, model)
         inventory = json.loads(path.read_text())
+        capture_status = inventory.get('capture_crosscheck', {}).get('status', 'NOT_RUN')
+        if capture_status == 'FAIL':
+            failures.append(f'{model}: Merlin capture cross-check FAIL')
         rules = mapping['rules'].get(model, [])
         builds = mapping['builds'].get(model, {})
         placed, unmapped, hits = place(model, inventory, rules, kernels)
@@ -222,7 +244,7 @@ def main():
             by_where[row['where']]['flops'] += row['count'] * row['flops_each']
         summary['models'][model] = {
             'inventory_nodes': inventory['node_count'], 'aggregated_records': len(inventory['ops']),
-            'capture_crosscheck': inventory.get('capture_crosscheck', {}).get('status', 'NOT_RUN'),
+            'capture_crosscheck': capture_status,
             'derived_launches': derived, 'kit_launches': expected,
             'status': 'INCOMPLETE' if unmapped else 'COMPLETE', 'unmapped': unmapped,
             'flops': dict(flops), 'atlas_share_of_runtime_flops': flops['atlas'] / runtime if runtime else 0,
@@ -251,7 +273,7 @@ def main():
                   for key in expected]
         lines += ['', 'Projection panel counts are informational; the export derives calls, not physical panels.']
         lines += ['', f"FLOPs: Atlas {gflop(flops['atlas'])} GFLOP, host {gflop(flops['host'])} GFLOP "
-                  f"({100 * flops['atlas'] / runtime if runtime else 0:.4f}% of runtime FLOPs on Atlas); build-time constants "
+                  f"({100 * flops['atlas'] / runtime if runtime else 0:.4f}% of runtime FLOPs assigned to Atlas); build-time constants "
                   f"{gflop(flops['build'])} GFLOP, not run on the target.", '']
         if unmapped:
             lines += [f"**INCOMPLETE: {len(unmapped)} unmapped rows, {sum(row['count'] for row in unmapped):,} "
@@ -296,7 +318,8 @@ def main():
     (args.out / 'coverage.json').write_text(dump_summary(summary))
     for model, value in summary['models'].items():
         print(model, value['status'], value['derived_launches'],
-              f"atlas share {100 * value['atlas_share_of_runtime_flops']:.4f}%", f"unmapped rows {len(value['unmapped'])}")
+              f"atlas share {100 * value['atlas_share_of_runtime_flops']:.4f}%", f"unmapped rows {len(value['unmapped'])}",
+              f"capture {value['capture_crosscheck']}")
 
 
 if __name__ == '__main__':
