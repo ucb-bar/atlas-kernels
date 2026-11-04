@@ -8,6 +8,7 @@ assembler output, so a backend gap can never change a kernel binary silently.
 Tiers (``TIERS``):
 
 * ``verified``: the machine-stream verifier and the timing verifier both accept the program.
+* ``contract-verified``: both accept under explicit immutable DRAM input assumptions, validated against an image.
 * ``stream-verified``: the machine-stream verifier accepts it and the timing verifier rejects it.
 * ``encode-only``: no verifier accepted it; only ``atlas-emit`` vouches for the words (verification was not
   requested, or the machine-stream verifier rejected the program).
@@ -42,11 +43,13 @@ import tempfile
 import time
 
 import atlas_asm_mlir
+import atlas_timing_contract
+from atlas_path_guard import checked as checked_path
 
 __all__ = ['TIERS', 'BACKENDS', 'BackendError', 'BackendUnavailable', 'Tools', 'Compiled', 'tools', 'compile',
            'cross_checked', 'Session', 'install', 'main']
 
-TIERS = ('verified', 'stream-verified', 'encode-only')
+TIERS = ('verified', 'contract-verified', 'stream-verified', 'encode-only')
 BACKENDS = ('atlas-mlir', 'assembler')
 RESTRICTED = ('hammer', 'vlsi')
 
@@ -88,47 +91,48 @@ def _build_source(build):
         return None
     source = found.group(1).strip()
     record = dict(directory=source)
-    if any(word in source.lower() or word in str(Path(source).resolve()).lower() for word in RESTRICTED):
-        record['unavailable'] = 'restricted source path'
+    try:
+        checked_path(source)
+    except ValueError:
+        record['unavailable'] = 'restricted or symbolic-link source path'
         return record
     if (Path(source) / '.git').exists():
         head = subprocess.run(['git', '-C', source, 'rev-parse', 'HEAD'], capture_output=True, text=True)
         if head.returncode == 0:
-            # Filter names before accessing working files, including through Git.
-            def tree_entries(tree, prefix=b''):
-                # Prune restricted names before descending into their Git trees.
-                listing = subprocess.run(['git', '-C', source, 'ls-tree', '-z', tree],
+            # List only one level at a time, pruning names before descending
+            # into Git trees as well as before accessing working files.
+            pending, listing = [('HEAD', b'')], []
+            while pending:
+                tree, prefix = pending.pop()
+                entries = subprocess.run(['git', '-C', source, 'ls-tree', '-z', tree],
                                          capture_output=True, check=True).stdout
-                for entry in listing.split(b'\0'):
+                for entry in entries.split(b'\0'):
                     if not entry:
                         continue
-                    metadata, name = entry.split(b'\t', 1)
-                    if any(word in os.fsdecode(name).lower() for word in RESTRICTED):
+                    metadata, component = entry.split(b'\t', 1)
+                    raw_path = prefix + component
+                    if any(word in os.fsdecode(raw_path).lower() for word in RESTRICTED):
                         continue
                     mode, kind, blob = metadata.split()
-                    relative = prefix + name
                     if kind == b'tree':
-                        yield from tree_entries(blob.decode(), relative + b'/')
-                    else:
-                        yield metadata + b'\t' + relative
-
-            listing = sorted(tree_entries('HEAD'), key=lambda entry: entry.split(b'\t', 1)[1])
+                        pending.append((blob.decode(), raw_path + b'/'))
+                    elif kind == b'blob':
+                        listing.append((raw_path, mode, blob))
             manifest, modified = hashlib.sha256(), False
-            for entry in listing:
-                if not entry:
-                    continue
-                metadata, raw_path = entry.split(b'\t', 1)
+            for raw_path, mode, blob in sorted(listing):
                 relative = os.fsdecode(raw_path)
-                if any(word in relative.lower() for word in RESTRICTED):
-                    continue
-                mode, kind, blob = metadata.split()
-                if kind != b'blob':
-                    continue
                 path = Path(source) / relative
-                if mode == b'120000' and path.is_symlink():
+                try:
+                    # A tracked symlink is hashed as link text; its parents
+                    # still must be physical paths. Never follow a replacement
+                    # directory symlink into an excluded source tree.
+                    checked_path(path.parent if mode == b'120000' else path)
+                    physical = True
+                except ValueError:
+                    physical = False
+                if physical and mode == b'120000' and path.is_symlink():
                     contents = os.fsencode(os.readlink(path))
-                elif mode != b'120000' and not path.is_symlink() and not any(
-                        word in str(path.resolve()).lower() for word in RESTRICTED) and path.is_file():
+                elif physical and mode != b'120000' and path.is_file():
                     contents = path.read_bytes()
                 else:
                     modified = True
@@ -175,31 +179,48 @@ class Compiled:
     timing: str | None                # "pass", "reject", or None when not run
     timing_diagnostics: tuple
     mlir: str
+    dram_contract: dict | None = None
 
     def binary(self):
         return b''.join(word.to_bytes(4, 'little') for word in self.words)
 
     def record(self):
-        return dict(tier=self.tier, words=len(self.words), words_sha256=hashlib.sha256(self.binary()).hexdigest(),
-                    stream=self.stream, stream_diagnostics=list(self.stream_diagnostics), timing=self.timing,
-                    timing_diagnostics=list(self.timing_diagnostics))
+        record = dict(tier=self.tier, words=len(self.words), words_sha256=hashlib.sha256(self.binary()).hexdigest(),
+                      stream=self.stream, stream_diagnostics=list(self.stream_diagnostics), timing=self.timing,
+                      timing_diagnostics=list(self.timing_diagnostics))
+        if self.dram_contract is not None:
+            record['dram_contract'] = self.dram_contract
+        return record
 
 
 _cache = {}
 
 
-def compile(program_text, *, verify=True, bin_dir=None, name='kernel.S', min_tier='stream-verified'):
-    """Translate, verify (unless ``verify`` is false), and encode one program; returns a Compiled record."""
+def compile(program_text, *, verify=True, bin_dir=None, name='kernel.S', min_tier='stream-verified', dram_contract=None):
+    """Translate, verify, and encode; optionally supply explicit immutable DRAM assumptions.
+
+    ``dram_contract`` is ``{name, segments: [{address, bytes_hex}], image:
+    {path, address}}``. Otherwise ATLAS_TIMING_DRAM_CONTRACTS can select an
+    explicit contract by source SHA-256. See atlas_timing_contract for the
+    manifest schema and caller obligations. Contract proofs never meet the
+    unconditional ``verified`` minimum tier.
+    """
     if min_tier not in TIERS:
         raise BackendError(f'unknown minimum tier: {min_tier}')
+    try:
+        contract = atlas_timing_contract.select(program_text, dram_contract)
+    except atlas_timing_contract.ContractError as error:
+        raise BackendError(str(error)) from error
     found = tools(bin_dir)
-    key = (hashlib.sha256(program_text.encode()).hexdigest(), verify, found, min_tier)
-    if key in _cache:
+    key = (hashlib.sha256(program_text.encode()).hexdigest(), verify, found, min_tier, name)
+    if contract is None and key in _cache:
         return _cache[key]
     try:
         mlir = atlas_asm_mlir.translate(program_text, name=name)
     except atlas_asm_mlir.AsmError as error:
         raise BackendError(f'translation failed: {error}') from None
+    if contract is not None:
+        mlir = contract.annotate(mlir)
     with tempfile.TemporaryDirectory(prefix='atlas-backend-') as directory:
         path = Path(directory) / 'kernel.mlir'
         path.write_text(mlir)
@@ -224,12 +245,15 @@ def compile(program_text, *, verify=True, bin_dir=None, name='kernel.S', min_tie
         stream_diagnostics = () if stream == 'pass' else _diagnostics(done['stream'][2])
         timing = 'pass' if done['timing'][0] == 0 else 'reject'
         timing_diagnostics = () if timing == 'pass' else _diagnostics(done['timing'][2])
-    tier = 'encode-only' if stream != 'pass' else ('verified' if timing == 'pass' else 'stream-verified')
-    result = Compiled(words, tier, stream, stream_diagnostics, timing, timing_diagnostics, mlir)
+    passed_tier = 'contract-verified' if contract is not None else 'verified'
+    tier = 'encode-only' if stream != 'pass' else (passed_tier if timing == 'pass' else 'stream-verified')
+    result = Compiled(words, tier, stream, stream_diagnostics, timing, timing_diagnostics, mlir,
+                      contract.record() if contract is not None else None)
     if TIERS.index(tier) > TIERS.index(min_tier):
         raise BackendError(f'program tier {tier} is below required {min_tier}: ' +
                            '; '.join(stream_diagnostics + timing_diagnostics))
-    _cache[key] = result
+    if contract is None:
+        _cache[key] = result
     return result
 
 
@@ -252,7 +276,7 @@ def rule(diagnostic):
 
 
 class Session:
-    """Cross-checks assembly in the wrapped process (including inherited hooks after fork) and spools one record per program."""
+    """Cross-checks assembly in the wrapped process (including inherited hooks after fork) and spools verification records."""
 
     def __init__(self, backend, spool, *, verify=True, bin_dir=None):
         if backend not in BACKENDS:
@@ -260,21 +284,29 @@ class Session:
         self.backend, self.spool, self.verify, self.bin_dir = backend, Path(spool), verify, bin_dir
         self.tools = tools(bin_dir) if backend == 'atlas-mlir' else None
         self._seen = set()
+        self._contract_digests = {}
 
     def encode(self, text, assembler_words):
         words = [int(word) for word in assembler_words]
         digest = hashlib.sha256(text.encode()).hexdigest()
         key = (os.getpid(), digest)
-        if key in self._seen:
+        contract_environment = atlas_timing_contract.ENVIRONMENT in os.environ
+        if key in self._seen and not contract_environment and self._contract_digests.get(key) is None:
             return
-        self._seen.add(key)
         record = dict(source_sha256=digest, assembler_words=len(words),
                       assembler_words_sha256=hashlib.sha256(b''.join(w.to_bytes(4, 'little') for w in words)).hexdigest())
         if self.backend == 'atlas-mlir':
             compiled = cross_checked(text, words, verify=self.verify, bin_dir=self.bin_dir, min_tier='encode-only')
+            identity = compiled.dram_contract['sha256'] if compiled.dram_contract else None
+            if key in self._contract_digests and self._contract_digests[key] != identity:
+                raise BackendError('DRAM contract changed for a program during the backend session')
+            self._contract_digests[key] = identity
             record.update(compiled.record(), words_equal_assembler=True)
         else:
             record.update(tier='assembler')
+        if key in self._seen:
+            return
+        self._seen.add(key)
         with self.spool.open('a') as spool:
             spool.write(json.dumps(record, sort_keys=True) + '\n')
 
@@ -283,7 +315,10 @@ class Session:
         if self.spool.is_file():
             for line in self.spool.read_text().splitlines():
                 record = json.loads(line)
-                merged.setdefault(record['source_sha256'], record)
+                # Forked children can verify the same source under different contracts
+                # or with different outcomes. Only identical records may be collapsed.
+                key = (record['source_sha256'], json.dumps(record, sort_keys=True))
+                merged.setdefault(key, record)
         return [merged[key] for key in sorted(merged)]
 
 
@@ -375,6 +410,7 @@ def _run(args):
                 verification='none' if args.no_verify else 'machine-stream and timing',
                 command=[args.script, *args.arguments], cwd=os.getcwd(), library=str(Path(__file__).absolute()),
                 library_sha256=_file_sha(__file__), translator_sha256=_file_sha(atlas_asm_mlir.__file__),
+                timing_contract_loader_sha256=_file_sha(atlas_timing_contract.__file__),
                 tools=session.tools.identity() if session.tools else None, started=time.time())
     install(session)
     script = str(Path(args.script).absolute())
