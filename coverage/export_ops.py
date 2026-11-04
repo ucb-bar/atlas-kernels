@@ -106,6 +106,13 @@ def flops(op, inputs, outputs):
     if op == 'aten.scaled_dot_product_attention.default':
         q, k = inputs[0][0], inputs[1][0]
         return 4 * numel(q[:-1]) * k[-2] * q[-1] + 5 * numel(q[:-1]) * k[-2]
+    # Export can retain functorch batching wrappers around mask construction. They change
+    # tensor layout, not values; other Python callables still use the compute fallback.
+    if op in {f'{module}.{name}' for module in ('torch._C._functorch', 'torch._functorch.predispatch')
+              for name in ('_add_batch_dim', '_remove_batch_dim')}:
+        return 0
+    if not op.startswith('aten.'):
+        return numel(out)
     name = op.split('.')[1]
     if name in LAYOUT:
         return 0
@@ -149,6 +156,12 @@ def walk(graph_module, strip, records, inherited=None):
         op = str(node.target)
         if op in SKIP:
             continue
+        if not isinstance(node.target, torch._ops.OpOverload):
+            # Builtin reprs may contain process addresses and no dotted operator name.
+            name = getattr(node.target, '__name__', None)
+            module_name = getattr(node.target, '__module__', '')
+            if name:
+                op = f'{module_name}.{name}' if module_name else name
         module, call = '', 0
         if stack:
             key, (path, _) = list(stack.items())[-1]

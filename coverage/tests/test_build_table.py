@@ -151,6 +151,32 @@ class BuildTableTest(unittest.TestCase):
         for row in inventory['ops']:
             self.assertEqual(export_ops.flops(row['op'], row['inputs'], row['outputs']), row['flops_each'])
 
+    def test_export_walk_retains_python_compute_and_batching_wrappers(self):
+        import operator
+        import torch
+        graph = torch.fx.Graph()
+        x = graph.placeholder('x')
+        x.meta['val'] = torch.zeros(2, 3)
+        batch = graph.call_function(torch._C._functorch._add_batch_dim, (x, 0, 1))
+        batch.meta['val'] = torch.zeros(3)
+        unbatch = graph.call_function(torch._C._functorch._remove_batch_dim, (batch, 1, 2, 0))
+        unbatch.meta['val'] = torch.zeros(2, 3)
+        neg = graph.call_function(operator.neg, (unbatch,))
+        neg.meta['val'] = torch.zeros(2, 3)
+        add = graph.call_function(torch.ops.aten.add.Tensor, (neg, x))
+        add.meta['val'] = torch.zeros(2, 3)
+        graph.output(add)
+        records = []
+        export_ops.walk(torch.fx.GraphModule(torch.nn.Module(), graph), '', records)
+        self.assertEqual([row['op'] for row in records], [
+            'torch._C._functorch._add_batch_dim', 'torch._C._functorch._remove_batch_dim',
+            '_operator.neg', 'aten.add.Tensor'])
+        self.assertEqual([row['flops'] for row in records], [0, 0, 6, 6])
+        self.assertEqual(export_ops.flops('dotless', [[[2, 3], 'float32']],
+                                         [[[2, 3], 'float32']]), 6)
+        self.assertEqual(export_ops.flops('custom.view.compute', [[[2, 3], 'float32']],
+                                         [[[2, 3], 'float32']]), 6)
+
     def test_unmapped_report_requires_explicit_opt_in(self):
         inventory = json.loads((COVERAGE / 'fixture' / 'tinyllama.json').read_text())
         inventory['model'] = 'unregistered'
