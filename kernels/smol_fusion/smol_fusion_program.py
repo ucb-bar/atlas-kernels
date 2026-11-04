@@ -5,13 +5,10 @@ host work; callers may suppress that work only after successful device completio
 """
 from dataclasses import dataclass
 import hashlib
-from pathlib import Path
-import sys
 
 from atlas_epilogue import Epilogue, Step, TileInput
 from atlas_program import assembly, dma_load_bytes, _reuse_module
-sys.path.insert(0, str(Path(__file__).absolute().parent / "host_iss"))
-from chipyard.arena import relocate_assembly
+from smol_weight_relocate import relocate_assembly
 
 DRAM_BASE = 0x90000000
 GUARD_BYTES = 256
