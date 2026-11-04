@@ -4,9 +4,17 @@
 schema: atlas.kernel.v1
 family: rne_add
 summary: "BF16 add rounded to nearest even (host FP32 add then BF16 RNE) from truncating VPU arithmetic, 34 instructions"
-stage: "epilogue stage (Step \"add_rne\") and rope post-pass building block"
+stage: "epilogue stage, rope post-pass building block, or opt-in standalone streamed add"
 entry_points:
-  - {module: atlas_rne_add, function: rne_add, parameters: "a, b, result, sign=4, *, constants=True"}
+  - module: atlas_rne_add
+    function: rne_add
+    parameters: "a, b, result, sign=4, *, constants=True"
+  - module: atlas_rne_add_stream
+    function: assembly
+    parameters: "rows, width, *, dram_base=0x90000000"
+  - module: atlas_rne_add_stream
+    function: flat_geometry
+    parameters: "elements; compact contiguous stream padded only to 1024 elements"
 ops: [aten.add.Tensor (bf16 residual)]
 dtypes:
   inputs: bf16
@@ -14,10 +22,14 @@ dtypes:
 constraints:
   registers: "even pairs disjoint from m6..m30, m48, m50, and constants m32..m46"
 select:
-  - {op: aten.add.Tensor, dtype: bf16, shape: projection output tile, variant: "epilogue Step(\"add_rne\")"}
+  - op: aten.add.Tensor
+    dtype: bf16
+    shape: projection output tile
+    variant: "epilogue Step(\"add_rne\")"
 models:
-  - {model: tinyllama, use: prefill residual adds after o_proj and down_proj; final add of the RoPE post-pass}
-generator: "make gen-rne_add ARGS=\"[--registers a,b,result,sign]\""
-tests: [../../lib/tests/test_kernel_manifests.py, ../../lib/tests/test_kernel_bench.py, ../../coverage/tests/test_bench_model.py]
-checks: [no standalone numeric test yet; every TinyLlama launch using it executed on npu_model 47b8599 numerics=rtl]
-run_tests: "make test-lib test-projection_gemm test-coverage NPU_MODEL=<npu_model 47b8599 checkout>"
+  - model: tinyllama
+    use: prefill residual adds after o_proj and down_proj; final add of the RoPE post-pass
+generator: "make gen-rne_add ARGS=\"[--registers a,b,result,sign] [--stream-shape ROWSxWIDTH | --elements COUNT]\""
+tests: [tests/test_rne_add_stream.py, ../../lib/tests/test_kernel_manifests.py, ../../lib/tests/test_kernel_bench.py, ../../coverage/tests/test_bench_model.py]
+checks: [streamed add executed on npu_model 47b8599 numerics=rtl against FP32 add then BF16 RNE with input and guard preservation]
+run_tests: "make test-rne_add test-lib test-projection_gemm test-coverage NPU_MODEL=<npu_model 47b8599 checkout>"
