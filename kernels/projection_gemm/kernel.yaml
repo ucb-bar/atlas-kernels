@@ -36,250 +36,82 @@ variants:
   - name: tiny
     module: atlas_program_reuse_tiny
     uses:
-      - model: tinyllama
-        mkn: [128, 2048, 256]
-        panels: 44
-        phase: prefill
-        modules: "k_proj, v_proj"
-      - model: tinyllama
-        mkn: [128, 2048, 1280]
-        panels: 1
-        phase: prefill
-        modules: lm_head
-      - model: tinyllama
-        mkn: [128, 2048, 1536]
-        panels: 44
-        phase: prefill
-        modules: "gate_proj, up_proj"
-      - model: tinyllama
-        mkn: [128, 2048, 2048]
-        panels: 44
-        phase: prefill
-        modules: "q_proj, o_proj"
-      - model: tinyllama
-        mkn: [128, 2048, 2048]
-        panels: 88
-        phase: prefill
-        modules: "gate_proj, up_proj"
-      - model: tinyllama
-        mkn: [128, 2048, 2048]
-        panels: 15
-        phase: prefill
-        modules: lm_head
+      - {model: tinyllama, mkn: [128, 2048, 256], panels: 44, phase: prefill, modules: 'k_proj, v_proj'}
+      - {model: tinyllama, mkn: [128, 2048, 1280], panels: 1, phase: prefill, modules: lm_head}
+      - {model: tinyllama, mkn: [128, 2048, 1536], panels: 44, phase: prefill, modules: 'gate_proj, up_proj'}
+      - {model: tinyllama, mkn: [128, 2048, 2048], panels: 44, phase: prefill, modules: 'q_proj, o_proj'}
+      - {model: tinyllama, mkn: [128, 2048, 2048], panels: 88, phase: prefill, modules: 'gate_proj, up_proj'}
+      - {model: tinyllama, mkn: [128, 2048, 2048], panels: 15, phase: prefill, modules: lm_head}
   - name: tiny_breadth
     module: atlas_program_reuse_tiny_breadth
     uses:
-      - model: tinyllama
-        mkn: [32, 2048, 256]
-        panels: 88
-        phase: decode
-        modules: "k_proj, v_proj"
-      - model: tinyllama
-        mkn: [32, 2048, 1280]
-        panels: 2
-        phase: decode
-        modules: lm_head
-      - model: tinyllama
-        mkn: [32, 2048, 1536]
-        panels: 88
-        phase: decode
-        modules: "gate_proj, up_proj"
-      - model: tinyllama
-        mkn: [32, 2048, 2048]
-        panels: 88
-        phase: decode
-        modules: "q_proj, o_proj"
-      - model: tinyllama
-        mkn: [32, 2048, 2048]
-        panels: 176
-        phase: decode
-        modules: "gate_proj, up_proj"
-      - model: tinyllama
-        mkn: [32, 2048, 2048]
-        panels: 30
-        phase: decode
-        modules: lm_head
-      - model: tinyllama
-        mkn: [32, 5632, 1024]
-        panels: 88
-        phase: decode
-        modules: down_proj
-      - model: tinyllama
-        mkn: [128, 5632, 1024]
-        panels: 44
-        phase: prefill
-        modules: down_proj
+      - {model: tinyllama, mkn: [32, 2048, 256], panels: 88, phase: decode, modules: 'k_proj, v_proj'}
+      - {model: tinyllama, mkn: [32, 2048, 1280], panels: 2, phase: decode, modules: lm_head}
+      - {model: tinyllama, mkn: [32, 2048, 1536], panels: 88, phase: decode, modules: 'gate_proj, up_proj'}
+      - {model: tinyllama, mkn: [32, 2048, 2048], panels: 88, phase: decode, modules: 'q_proj, o_proj'}
+      - {model: tinyllama, mkn: [32, 2048, 2048], panels: 176, phase: decode, modules: 'gate_proj, up_proj'}
+      - {model: tinyllama, mkn: [32, 2048, 2048], panels: 30, phase: decode, modules: lm_head}
+      - {model: tinyllama, mkn: [32, 5632, 1024], panels: 88, phase: decode, modules: down_proj}
+      - {model: tinyllama, mkn: [128, 5632, 1024], panels: 44, phase: prefill, modules: down_proj}
   - name: resident
     module: atlas_program_reuse_resident
     uses:
-      - model: smolvla
-        mkn: [128, 768, 768]
-        panels: 784
-        modules: "vlm.model.vision_model.embeddings.patch_embedding, vlm.model.vision_model.encoder.layers.*.self_attn.k_proj, vlm.model.vision_model.encoder.layers.*.self_attn.out_proj, vlm.model.vision_model.encoder.layers.*.self_attn.q_proj, vlm.model.vision_model.encoder.layers.*.self_attn.v_proj"
+      - {model: smolvla, mkn: [128, 768, 768], panels: 784, modules: 'vlm.model.vision_model.embeddings.patch_embedding, vlm.model.vision_model.encoder.layers.*.self_attn.k_proj, vlm.model.vision_model.encoder.layers.*.self_attn.out_proj, vlm.model.vision_model.encoder.layers.*.self_attn.q_proj, vlm.model.vision_model.encoder.layers.*.self_attn.v_proj'}
   - name: stream
     module: atlas_program_reuse_stream
     uses:
-      - model: smolvla
-        mkn: [128, 3072, 768]
-        panels: 192
-        modules: "vlm.model.vision_model.encoder.layers.*.mlp.fc2"
+      - {model: smolvla, mkn: [128, 3072, 768], panels: 192, modules: vlm.model.vision_model.encoder.layers.*.mlp.fc2}
   - name: smol_connector
     module: atlas_program_reuse_smol_connector
     uses:
-      - model: smolvla
-        mkn: [64, 12288, 960]
-        panels: 2
-        modules: vlm.model.connector.modality_projection.proj
+      - {model: smolvla, mkn: [64, 12288, 960], panels: 2, modules: vlm.model.connector.modality_projection.proj}
   - name: blocked
     module: atlas_program_reuse_blocked
     uses:
-      - model: smolvla
-        mkn: [128, 768, 3072]
-        panels: 192
-        modules: "vlm.model.vision_model.encoder.layers.*.mlp.fc1"
-      - model: smolvla
-        mkn: [32, 32, 960]
-        panels: 1
-        modules: state_proj
-      - model: smolvla
-        mkn: [128, 960, 960]
-        panels: 32
-        modules: "vlm.model.text_model.layers.*.self_attn.o_proj, vlm.model.text_model.layers.*.self_attn.q_proj"
-      - model: smolvla
-        mkn: [64, 960, 960]
-        panels: 32
-        modules: "vlm.model.text_model.layers.*.self_attn.o_proj, vlm.model.text_model.layers.*.self_attn.q_proj"
-      - model: smolvla
-        mkn: [128, 960, 320]
-        panels: 32
-        modules: "vlm.model.text_model.layers.*.self_attn.k_proj, vlm.model.text_model.layers.*.self_attn.v_proj"
-      - model: smolvla
-        mkn: [64, 960, 320]
-        panels: 32
-        modules: "vlm.model.text_model.layers.*.self_attn.k_proj, vlm.model.text_model.layers.*.self_attn.v_proj"
-      - model: smolvla
-        mkn: [128, 960, 2560]
-        panels: 32
-        modules: "vlm.model.text_model.layers.*.mlp.gate_proj, vlm.model.text_model.layers.*.mlp.up_proj"
-      - model: smolvla
-        mkn: [64, 960, 2560]
-        panels: 32
-        modules: "vlm.model.text_model.layers.*.mlp.gate_proj, vlm.model.text_model.layers.*.mlp.up_proj"
-      - model: smolvla
-        mkn: [128, 2560, 960]
-        panels: 16
-        modules: "vlm.model.text_model.layers.*.mlp.down_proj"
-      - model: smolvla
-        mkn: [64, 2560, 960]
-        panels: 16
-        modules: "vlm.model.text_model.layers.*.mlp.down_proj"
-      - model: smolvla
-        mkn: [64, 32, 736]
-        panels: 10
-        modules: action_in_proj
-      - model: smolvla
-        mkn: [64, 1440, 736]
-        panels: 10
-        modules: action_time_mlp_in
-      - model: smolvla
-        mkn: [64, 736, 736]
-        panels: 10
-        modules: action_time_mlp_out
-      - model: smolvla
-        mkn: [64, 736, 960]
-        panels: 160
-        modules: "lm_expert.layers.*.self_attn.q_proj"
-      - model: smolvla
-        mkn: [64, 736, 320]
-        panels: 160
-        modules: "lm_expert.layers.*.self_attn.k_proj, lm_expert.layers.*.self_attn.v_proj"
-      - model: smolvla
-        mkn: [64, 960, 736]
-        panels: 160
-        modules: "lm_expert.layers.*.self_attn.o_proj"
-      - model: smolvla
-        mkn: [64, 736, 2048]
-        panels: 320
-        modules: "lm_expert.layers.*.mlp.gate_proj, lm_expert.layers.*.mlp.up_proj"
-      - model: smolvla
-        mkn: [64, 2048, 736]
-        panels: 160
-        modules: "lm_expert.layers.*.mlp.down_proj"
-      - model: smolvla
-        mkn: [128, 320, 320]
-        panels: 160
-        modules: "lm_expert.layers.*.self_attn.k_proj, lm_expert.layers.*.self_attn.v_proj"
-      - model: smolvla
-        mkn: [64, 320, 320]
-        panels: 160
-        modules: "lm_expert.layers.*.self_attn.k_proj, lm_expert.layers.*.self_attn.v_proj"
-      - model: resnet50
-        mkn: [224, 2304, 256]
-        modules: convolution GEMM
-      - model: resnet50
-        mkn: [64, 4608, 512]
-        modules: convolution GEMM
-      - model: resnet50
-        mkn: [800, 1152, 128]
-        modules: convolution GEMM
-      - model: resnet50
-        mkn: [224, 256, 1024]
-        modules: convolution GEMM
-      - model: resnet50
-        mkn: [3136, 576, 64]
-        modules: convolution GEMM
-      - model: resnet50
-        mkn: [3136, 64, 256]
-        modules: convolution GEMM
-      - model: resnet50
-        mkn: [224, 1024, 256]
-        modules: convolution GEMM
-      - model: resnet50
-        mkn: [800, 128, 512]
-        modules: convolution GEMM
-      - model: resnet50
-        mkn: [64, 512, 2048]
-        modules: convolution GEMM
-      - model: resnet50
-        mkn: [800, 512, 128]
-        modules: convolution GEMM
-      - model: resnet50
-        mkn: [12544, 160, 64]
-        modules: convolution GEMM
-      - model: resnet50
-        mkn: [64, 2048, 512]
-        modules: convolution GEMM
-      - model: resnet50
-        mkn: [64, 1024, 2048]
-        modules: convolution GEMM
-      - model: resnet50
-        mkn: [224, 512, 1024]
-        modules: convolution GEMM
-      - model: resnet50
-        mkn: [224, 1024, 512]
-        modules: convolution GEMM
-      - model: resnet50
-        mkn: [800, 256, 512]
-        modules: convolution GEMM
-      - model: resnet50
-        mkn: [3136, 256, 64]
-        modules: convolution GEMM
-      - model: resnet50
-        mkn: [3136, 256, 128]
-        modules: convolution GEMM
-      - model: resnet50
-        mkn: [800, 512, 256]
-        modules: convolution GEMM
-      - model: resnet50
-        mkn: [3136, 64, 64]
-        modules: convolution GEMM
+      - {model: smolvla, mkn: [128, 768, 3072], panels: 192, modules: vlm.model.vision_model.encoder.layers.*.mlp.fc1}
+      - {model: smolvla, mkn: [32, 32, 960], panels: 1, modules: state_proj}
+      - {model: smolvla, mkn: [128, 960, 960], panels: 32, modules: 'vlm.model.text_model.layers.*.self_attn.o_proj, vlm.model.text_model.layers.*.self_attn.q_proj'}
+      - {model: smolvla, mkn: [64, 960, 960], panels: 32, modules: 'vlm.model.text_model.layers.*.self_attn.o_proj, vlm.model.text_model.layers.*.self_attn.q_proj'}
+      - {model: smolvla, mkn: [128, 960, 320], panels: 32, modules: 'vlm.model.text_model.layers.*.self_attn.k_proj, vlm.model.text_model.layers.*.self_attn.v_proj'}
+      - {model: smolvla, mkn: [64, 960, 320], panels: 32, modules: 'vlm.model.text_model.layers.*.self_attn.k_proj, vlm.model.text_model.layers.*.self_attn.v_proj'}
+      - {model: smolvla, mkn: [128, 960, 2560], panels: 32, modules: 'vlm.model.text_model.layers.*.mlp.gate_proj, vlm.model.text_model.layers.*.mlp.up_proj'}
+      - {model: smolvla, mkn: [64, 960, 2560], panels: 32, modules: 'vlm.model.text_model.layers.*.mlp.gate_proj, vlm.model.text_model.layers.*.mlp.up_proj'}
+      - {model: smolvla, mkn: [128, 2560, 960], panels: 16, modules: vlm.model.text_model.layers.*.mlp.down_proj}
+      - {model: smolvla, mkn: [64, 2560, 960], panels: 16, modules: vlm.model.text_model.layers.*.mlp.down_proj}
+      - {model: smolvla, mkn: [64, 32, 736], panels: 10, modules: action_in_proj}
+      - {model: smolvla, mkn: [64, 1440, 736], panels: 10, modules: action_time_mlp_in}
+      - {model: smolvla, mkn: [64, 736, 736], panels: 10, modules: action_time_mlp_out}
+      - {model: smolvla, mkn: [64, 736, 960], panels: 160, modules: lm_expert.layers.*.self_attn.q_proj}
+      - {model: smolvla, mkn: [64, 736, 320], panels: 160, modules: 'lm_expert.layers.*.self_attn.k_proj, lm_expert.layers.*.self_attn.v_proj'}
+      - {model: smolvla, mkn: [64, 960, 736], panels: 160, modules: lm_expert.layers.*.self_attn.o_proj}
+      - {model: smolvla, mkn: [64, 736, 2048], panels: 320, modules: 'lm_expert.layers.*.mlp.gate_proj, lm_expert.layers.*.mlp.up_proj'}
+      - {model: smolvla, mkn: [64, 2048, 736], panels: 160, modules: lm_expert.layers.*.mlp.down_proj}
+      - {model: smolvla, mkn: [128, 320, 320], panels: 160, modules: 'lm_expert.layers.*.self_attn.k_proj, lm_expert.layers.*.self_attn.v_proj'}
+      - {model: smolvla, mkn: [64, 320, 320], panels: 160, modules: 'lm_expert.layers.*.self_attn.k_proj, lm_expert.layers.*.self_attn.v_proj'}
+      - {model: resnet50, mkn: [224, 2304, 256], modules: convolution GEMM}
+      - {model: resnet50, mkn: [64, 4608, 512], modules: convolution GEMM}
+      - {model: resnet50, mkn: [800, 1152, 128], modules: convolution GEMM}
+      - {model: resnet50, mkn: [224, 256, 1024], modules: convolution GEMM}
+      - {model: resnet50, mkn: [3136, 576, 64], modules: convolution GEMM}
+      - {model: resnet50, mkn: [3136, 64, 256], modules: convolution GEMM}
+      - {model: resnet50, mkn: [224, 1024, 256], modules: convolution GEMM}
+      - {model: resnet50, mkn: [800, 128, 512], modules: convolution GEMM}
+      - {model: resnet50, mkn: [64, 512, 2048], modules: convolution GEMM}
+      - {model: resnet50, mkn: [800, 512, 128], modules: convolution GEMM}
+      - {model: resnet50, mkn: [12544, 160, 64], modules: convolution GEMM}
+      - {model: resnet50, mkn: [64, 2048, 512], modules: convolution GEMM}
+      - {model: resnet50, mkn: [64, 1024, 2048], modules: convolution GEMM}
+      - {model: resnet50, mkn: [224, 512, 1024], modules: convolution GEMM}
+      - {model: resnet50, mkn: [224, 1024, 512], modules: convolution GEMM}
+      - {model: resnet50, mkn: [800, 256, 512], modules: convolution GEMM}
+      - {model: resnet50, mkn: [3136, 256, 64], modules: convolution GEMM}
+      - {model: resnet50, mkn: [3136, 256, 128], modules: convolution GEMM}
+      - {model: resnet50, mkn: [800, 512, 256], modules: convolution GEMM}
+      - {model: resnet50, mkn: [3136, 64, 64], modules: convolution GEMM}
   - name: default
     module: atlas_program
     uses:
-      - model: smolvla
-        mkn: [64, 736, 32]
-        panels: 10
-        modules: action_out_proj
+      - {model: smolvla, mkn: [64, 736, 32], panels: 10, modules: action_out_proj}
     note: any multiple-of-32 shape within VMEM and DRAM bounds; used when traffic_reuse is false or no recipe admits the shape
 generator: "make gen-projection_gemm ARGS=\"--shape MxKxN [--traffic-reuse | --resident-a | --resident-b] [--rescale-exponent E]\""
 tests: ["tests/test_program_reuse_*.py", tests/test_program_reuse_proof.py, tests/test_program_resident.py, tests/test_program_checks.py, tests/test_program_legacy_epilogue.py]
