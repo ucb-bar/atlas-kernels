@@ -11,12 +11,13 @@ import atlas_kernels_path  # noqa: E402
 
 class LibraryLayout(unittest.TestCase):
     def modules(self):
-        # gen.py in each family is a command-line script, never imported, so it is not a library module.
+        # gen.py (a command-line script) and reference.py (loaded by path by lib/kernel_bench.py) exist in each
+        # family and are never imported by bare name, so they are not library modules.
         return [path for directory in atlas_kernels_path.DIRECTORIES for path in sorted(directory.glob("*.py"))
-                if path.name != "gen.py"]
+                if path.name not in ("gen.py", "reference.py")]
 
     def test_no_module_imports_a_generator_script(self):
-        pattern = re.compile(r"^\s*(import gen\b|from gen import)", re.MULTILINE)
+        pattern = re.compile(r"^\s*(import (gen|reference)\b|from (gen|reference) import)", re.MULTILINE)
         for path in self.modules():
             with self.subTest(module=path.name):
                 self.assertIsNone(pattern.search(path.read_text()))
