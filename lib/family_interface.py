@@ -166,7 +166,7 @@ def main(argv=None):
     parser.add_argument('--simulator')
     parser.add_argument('--build-receipt')
     parser.add_argument('--memory', choices=('both', 'npu-model', 'synthetic'), default='both')
-    parser.add_argument('--timeout', type=int, default=900)
+    parser.add_argument('--timeout', type=int, default=3600)
     args = parser.parse_args(argv)
     import torch
     torch.set_num_threads(1)
