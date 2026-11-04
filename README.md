@@ -114,6 +114,25 @@ The generator files are byte-identical to the atlas-mlir sources that model rece
 
 [`coverage/RESULTS.md`](coverage/RESULTS.md) is the per-kernel bench table from `lib/kernel_bench.py`: one representative real shape per family and model, on seeded synthetic inputs, with bit-exactness against `lib/golden` where a golden exists, cosine similarity and relative error against an FP32 PyTorch reference, and cycle counts. The cycles are npu_model Core cycle-model counts, not RTL cycles.
 
+## Starting a new model
+
+These four commands need only public inputs: a PyTorch model, this repository, and npu_model `47b8599`. They show every op and shape, which kernel family covers which op, and how each covered launch performs at the model's real shapes on npu_model. `TORCH_PYTHON` is a Python with PyTorch and NumPy; `build_table.py` needs PyYAML.
+
+```sh
+# 1. Export every ATen op and shape; the loader defines get_model_and_inputs() -> (torch.nn.Module, tuple_of_inputs).
+$TORCH_PYTHON coverage/export_ops.py mymodel --loader path/to/loader.py --out "$OUT/export" --fixture "$OUT/mymodel.json"
+# 2. Place ops on kernel families; unmapped ops are listed with their FLOPs instead of failing the build.
+python3 coverage/build_table.py --inventory mymodel="$OUT/mymodel.json" --mapping mymodel-mapping.yaml --allow-unmapped --out "$OUT/table"
+# 3. Generate and run every distinct Atlas launch at the model's shapes on npu_model (numerics="rtl").
+$TORCH_PYTHON coverage/bench_model.py --coverage "$OUT/table/coverage.json" --model-root /path/to/npu-model --out "$OUT/bench" --workers 32
+# 4. Read the table.
+less "$OUT/bench/MODEL-BENCH.md"
+```
+
+Start the mapping from [`coverage/examples/causal_decoder/mapping.yaml`](coverage/examples/causal_decoder/mapping.yaml), which maps Merlin's small `examples/workloads/causal_decoder` loader: Linear layers to `projection_gemm`, RMSNorm to `rmsnorm`, SiLU and the gate multiply to `epilogue`, and residual adds to `rne_add`, each with the reason it fits, and leaves its head-dimension-8 attention unmapped. Each rule's optional `launch` hint (documented at the top of [`coverage/mapping.yaml`](coverage/mapping.yaml)) tells `bench_model.py` which launches the rule's rows become; Linear and Conv2d rows need none. [`coverage/examples/causal_decoder/MODEL-BENCH.md`](coverage/examples/causal_decoder/MODEL-BENCH.md) is the result, regenerated with one command by `coverage/examples/causal_decoder/bench.py`.
+
+`MODEL-BENCH.md` lists, per distinct launch: the generator variant (for `projection_gemm`, the traffic-reuse recipe or the default schedule), program size, npu_model model cycles, bit-exactness against `lib/golden` where the family has an independent golden, FP32 fidelity (cosine and relative error), the count in the model, and cycles times count. Shapes a generator rejects are `no-variant` with the generator's error. Its summary gives a device cycle estimate by family, the top shapes by total cycles, and the unsupported list; that table is the starting point for kernel ablation and optimization. The cycles are npu_model model cycles, not RTL cycles, and a sum of per-launch cycles ignores host time and launch overhead. Inputs are seeded synthetic tensors, so this shows kernel coverage and per-launch behavior, not model accuracy; real-value capture, host graphs, and ELFs are the later steps in the [bringup guide](https://github.com/ucb-bar/atlas-mlir/blob/sota/bringup-docs/docs/bringing-up-a-model.md). [`coverage/examples/tinyllama/MODEL-BENCH.md`](coverage/examples/tinyllama/MODEL-BENCH.md) and [`coverage/examples/smolvla/MODEL-BENCH.md`](coverage/examples/smolvla/MODEL-BENCH.md) are the same table for the two focus models (`make bench-model MODEL=tinyllama OUT=... NPU_MODEL=...`).
+
 ## License
 
 Apache License 2.0; see [LICENSE](LICENSE).
