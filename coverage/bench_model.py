@@ -604,8 +604,16 @@ def program_identity(built, atlas_mlir_bin=None, min_tier='stream-verified'):
     return result
 
 
+def write_job_result(path, result):
+    """Publish a complete checkpoint or result even when the worker is about to time out."""
+    path = Path(path)
+    temporary = path.with_name(path.name + '.tmp')
+    temporary.write_text(json.dumps(result, indent=1) + '\n')
+    temporary.replace(path)
+
+
 def run_job(entry, mode, model_root, work, max_cycles, max_instructions, atlas_mlir_bin=None,
-            min_tier='stream-verified'):
+            min_tier='stream-verified', checkpoint=None):
     """One functional or timed execution of one launch; returns a result dict (never raises for NoVariant)."""
     os.environ.setdefault('OMP_NUM_THREADS', '1')
     sys.path.insert(0, str(model_root))
@@ -624,6 +632,9 @@ def run_job(entry, mode, model_root, work, max_cycles, max_instructions, atlas_m
                   meta=built.meta)
     try:
         result.update(program_identity(built, atlas_mlir_bin, min_tier))
+        if checkpoint is not None:
+            # Preserve the verified program identity if the parent terminates a slow timed execution.
+            write_job_result(checkpoint, dict(result, status='running'))
         if mode == 'functional':
             from atlas_execution import Executor
             execution = Executor(model_root).execute(built.source, built.arena, built.output_offset, built.output_bytes,
@@ -649,8 +660,8 @@ def run_job(entry, mode, model_root, work, max_cycles, max_instructions, atlas_m
 def job_main(args):
     entry = json.loads(Path(args.job).read_text())
     result = run_job(entry, args.mode, args.model_root, Path(args.job).parent, args.max_cycles, args.max_instructions,
-                     args.atlas_mlir_bin, args.min_tier)
-    Path(args.result).write_text(json.dumps(result, indent=1) + '\n')
+                     args.atlas_mlir_bin, args.min_tier, args.result)
+    write_job_result(args.result, result)
     return 0
 
 
@@ -678,11 +689,14 @@ def execute(launches, args):
             cached = json.loads(out.read_text())
             backend = cached.get('backend')
             # A compiler-enabled run must never silently reuse an assembler-only job or a weaker policy.
-            if cached.get('status') in ('no-variant', 'timeout') or (
-                    not args.atlas_mlir_bin and not backend) or (backend and
-                    backend.get('min_tier') == args.min_tier and backend.get('tools') == args.backend_tools):
+            allowed_tiers = ('verified', 'stream-verified', 'encode-only')
+            policy_matches = (not args.atlas_mlir_bin and not backend) or (args.atlas_mlir_bin and backend and
+                              backend.get('tier') in allowed_tiers[:allowed_tiers.index(args.min_tier) + 1] and
+                              backend.get('min_tier') == args.min_tier and backend.get('tools') == args.backend_tools)
+            if cached.get('status') == 'no-variant' or (cached.get('status') in ('ok', 'timeout') and policy_matches):
                 return entry, mode, cached
         job.write_text(json.dumps(entry) + '\n')
+        out.unlink(missing_ok=True)
         command = [sys.executable, '-B', str(Path(__file__).absolute()), '--job', str(job), '--mode', mode,
                    '--result', str(out), '--model-root', str(args.model_root), '--max-cycles', str(args.max_cycles),
                    '--max-instructions', str(args.max_instructions)]
@@ -693,8 +707,11 @@ def execute(launches, args):
         try:
             process = subprocess.run(command, capture_output=True, text=True, timeout=timeout, env=environment)
         except subprocess.TimeoutExpired:
-            result = dict(key=entry['key'], mode=mode, status='timeout', seconds=round(time.perf_counter() - started, 1))
-            out.write_text(json.dumps(result, indent=1) + '\n')
+            result = json.loads(out.read_text()) if out.exists() else dict(key=entry['key'], mode=mode)
+            result.update(status='timeout', seconds=round(time.perf_counter() - started, 1))
+            if args.atlas_mlir_bin and not result.get('backend'):
+                result.update(status='error', error='job timed out before compiler verification completed')
+            write_job_result(out, result)
             return entry, mode, result
         if process.returncode or not out.exists():
             return entry, mode, dict(key=entry['key'], mode=mode, status='error', error=process.stderr.strip()[-2000:])
@@ -730,7 +747,7 @@ def merge(launches, results):
         part = results.get(entry['key'], {}).get('subset')
         row = dict(entry, shape=describe(entry))
         statuses = {functional.get('status'), timed.get('status')}
-        if 'no-variant' in statuses:
+        if 'no-variant' in statuses and 'error' not in statuses:
             row.update(status='no-variant', error=(functional if functional.get('status') == 'no-variant' else timed).get('error'))
             rows.append(row)
             continue
@@ -758,6 +775,8 @@ def merge(launches, results):
                 row.update(model_cycles=done['model_cycles'] * part['factor'], timed_output_equal=None,
                            cycles_source=f"estimate: {part['rows']}-row subset ({done['model_cycles']:,} cycles) x {part['factor']}",
                            subset_seconds=done.get('seconds'))
+            elif done.get('status') == 'error':
+                errors.append(f"timed-subset: {done.get('error')}")
         if functional.get('status') == 'timeout':
             errors.append(f"functional: exceeded {functional['seconds']:.0f} s")
         row['status'] = 'error' if errors else 'ok'
@@ -909,7 +928,9 @@ def render(document):
                   for r in document['uncovered']]
     notes = document.get('notes')
     if notes:
-        lines += ['', '## Notes', '', *notes]
+        lines += ['', '## Notes']
+        for note in notes:
+            lines += ['', note]
     return '\n'.join(lines) + '\n'
 
 

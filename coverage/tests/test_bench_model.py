@@ -1,5 +1,6 @@
 """bench_model.py turns coverage rows into the kits' launches, reports no-variant shapes and unmapped ops, and runs."""
 import copy
+import hashlib
 import importlib.util
 import json
 import os
@@ -7,6 +8,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -91,6 +93,102 @@ class PlanTest(unittest.TestCase):
         rows = [dict(key='a', status='ok', bit_exact=False), dict(key='b', status='ok', timed_output_equal=False),
                 dict(key='c', status='no-variant'), dict(key='d', status='ok', bit_exact=True, timed_output_equal=True)]
         self.assertEqual(bench_model.failures(rows), ['a: independent golden mismatch', 'b: timed/functional mismatch'])
+
+    def test_subset_compiler_error_is_a_launch_failure(self):
+        entry = dict(key='attention:toy', family='attention', count=2,
+                     params=dict(rows=256, keys=32, heads=1, kv_heads=1, head_dim=64,
+                                 mask='none', output_fp8=False))
+        error = 'BackendError: program tier encode-only is below required verified'
+        results = {entry['key']: dict(functional=dict(status='ok'),
+                                     timed=dict(status='timeout', seconds=1),
+                                     subset=dict(rows=128, factor=2, result=dict(status='error', error=error)))}
+        row, = bench_model.merge([entry], results)
+        self.assertEqual(row['status'], 'error')
+        self.assertIn(error, row['error'])
+        self.assertTrue(bench_model.failures([row]))
+        self.assertNotIn('total_cycles', row)
+
+    def test_no_variant_does_not_hide_other_job_error(self):
+        entry, = [item for item in bench_model.plan(toy_model()['models']['toy'])[0]
+                  if item['family'] == 'projection_gemm']
+        error = 'BackendError: atlas-emit words differ from the assembler'
+        for functional, timed in ((dict(status='no-variant', error='unsupported shape'),
+                                   dict(status='error', error=error)),
+                                  (dict(status='error', error=error),
+                                   dict(status='no-variant', error='unsupported shape'))):
+            with self.subTest(functional_status=functional['status']):
+                row, = bench_model.merge([entry], {entry['key']: dict(functional=functional, timed=timed)})
+                self.assertEqual(row['status'], 'error')
+                self.assertIn(error, row['error'])
+                self.assertTrue(bench_model.failures([row]))
+
+    def test_resume_reruns_incomplete_or_compilerless_timeout_jobs(self):
+        entry = dict(key='projection_gemm:resume', family='projection_gemm')
+        tools = {'atlas-opt': {'sha256': 'test-opt'}, 'atlas-emit': {'sha256': 'test-emit'}}
+        backend = dict(tier='verified', min_tier='stream-verified', tools=tools)
+        for cached_status, cached_backend in (('running', backend), ('timeout', None)):
+            with self.subTest(cached_status=cached_status), tempfile.TemporaryDirectory() as tmp:
+                args = SimpleNamespace(out=Path(tmp), resume=True, atlas_mlir_bin=Path(tmp) / 'bin',
+                                       min_tier='stream-verified', backend_tools=tools, model_root=Path(tmp) / 'model',
+                                       workers=2, max_cycles=100, max_instructions=100,
+                                       job_timeout=1, subset_after=1)
+                jobs = args.out / 'jobs'
+                jobs.mkdir()
+                for mode in ('functional', 'timed'):
+                    name = hashlib.sha256((entry['key'] + mode).encode()).hexdigest()[:16]
+                    (jobs / f'{name}.{mode}.json').write_text(json.dumps(dict(
+                        key=entry['key'], mode=mode, status=cached_status, backend=cached_backend, seconds=1)))
+
+                def rerun(command, **kwargs):
+                    mode = command[command.index('--mode') + 1]
+                    destination = Path(command[command.index('--result') + 1])
+                    destination.write_text(json.dumps(dict(key=entry['key'], mode=mode, status='no-variant')))
+                    return subprocess.CompletedProcess(command, 0, stdout='', stderr='')
+
+                with mock.patch.object(bench_model.subprocess, 'run', side_effect=rerun) as process, \
+                        mock.patch('builtins.print'):
+                    results = bench_model.execute([entry], args)
+                self.assertEqual(process.call_count, 2)
+                self.assertEqual(sorted(call.args[0][call.args[0].index('--mode') + 1]
+                                        for call in process.call_args_list), ['functional', 'timed'])
+                for call in process.call_args_list:
+                    command = call.args[0]
+                    self.assertEqual(command[command.index('--atlas-mlir-bin') + 1], str(args.atlas_mlir_bin))
+                    self.assertEqual(command[command.index('--min-tier') + 1], args.min_tier)
+                self.assertEqual({mode: result['status'] for mode, result in results[entry['key']].items()},
+                                 {'functional': 'no-variant', 'timed': 'no-variant'})
+
+    def test_timeout_retains_verified_checkpoint_identity(self):
+        entry = dict(key='projection_gemm:timeout', family='projection_gemm', params={})
+        identity = dict(backend=dict(tier='verified', min_tier='stream-verified', tools={}),
+                        program_words=7, words_sha256='words-digest', arena_sha256='arena-digest')
+        for checkpoint in (True, False):
+            with self.subTest(checkpoint=checkpoint), tempfile.TemporaryDirectory() as tmp:
+                args = SimpleNamespace(out=Path(tmp), resume=False, atlas_mlir_bin=Path(tmp) / 'bin',
+                                       min_tier='stream-verified', backend_tools={}, model_root=Path(tmp) / 'model',
+                                       workers=2, max_cycles=100, max_instructions=100,
+                                       job_timeout=1, subset_after=1, subset_rows=128)
+
+                def timeout(command, **kwargs):
+                    if checkpoint:
+                        mode = command[command.index('--mode') + 1]
+                        destination = Path(command[command.index('--result') + 1])
+                        bench_model.write_job_result(destination, dict(
+                            key=entry['key'], mode=mode, status='running', **identity))
+                    raise subprocess.TimeoutExpired(command, kwargs['timeout'])
+
+                with mock.patch.object(bench_model.subprocess, 'run', side_effect=timeout), \
+                        mock.patch('builtins.print'):
+                    results = bench_model.execute([entry], args)
+                self.assertEqual(set(results[entry['key']]), {'functional', 'timed'})
+                for result in results[entry['key']].values():
+                    if checkpoint:
+                        self.assertEqual(result['status'], 'timeout')
+                        for field, value in identity.items():
+                            self.assertEqual(result[field], value)
+                    else:
+                        self.assertEqual(result['status'], 'error')
+                        self.assertIn('before compiler verification completed', result['error'])
 
 
 @unittest.skipUnless(CAN_RUN, 'needs NumPy, PyTorch, and npu_model (ATLAS_NPU_MODEL_ROOT)')
