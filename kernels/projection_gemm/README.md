@@ -89,6 +89,10 @@ make gen-projection_gemm NPU_MODEL=/path/to/npu-model ARGS="--shape 64x736x32"
 
 `gen.py` writes the program text (`.S`), the 32-bit words npu_model's assembler produces (`.bin`), and a `.json` record (recipe, offsets, DMA bytes) into `build/projection_gemm/`.
 
+## Reference and bench results
+
+`reference.py` defines the bench cases and their FP32 PyTorch references for `lib/kernel_bench.py`: 4 cases (TinyLlama prefill and decode lm_head panels, SmolVLA vision and text q panels), each bit-exact against `lib/golden` `ordered_matmul`. [`RESULTS.md`](RESULTS.md) lists bit-exactness, cosine similarity and relative error against the FP32 reference, and npu_model model cycles (not RTL cycles) for each case, run on npu_model 47b8599 with `numerics="rtl"`.
+
 ## Tests and checks
 
 - `tests/test_program_reuse_*.py` and `tests/test_program_reuse_proof.py` prove every recipe symbolically with `tests/reuse_proof.py` (addresses, K order, bank ownership, DMA traffic, output halves) and include mutation controls that must be detected.

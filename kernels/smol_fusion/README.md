@@ -26,6 +26,10 @@ make gen-smol_fusion NPU_MODEL=/path/to/npu-model ARGS="--shape 128x768x768 --op
 
 `gen.py` stages a deterministic panel and writes `.S`, `.bin` (npu_model-assembled words), and `.json` into `build/smol_fusion/`. `kernel.yaml` is the machine-readable manifest.
 
+## Reference and bench results
+
+`reference.py` defines the bench cases and their FP32 PyTorch references for `lib/kernel_bench.py`: 1 case (SmolVLA vision fc1 bias and GELU with FP8 output); no Atlas-arithmetic golden yet, so it reports fidelity and cycles only. [`RESULTS.md`](RESULTS.md) lists bit-exactness, cosine similarity and relative error against the FP32 reference, and npu_model model cycles (not RTL cycles) for each case, run on npu_model 47b8599 with `numerics="rtl"`.
+
 ## Tests and checks
 
 There are no tests in this directory yet. In atlas-mlir, `test/test_smol_fusion_program.py`, `test/test_smol_fp8_producer.py`, and `test/test_smol_fusion_assets.py` check staging, layouts, and relocation, and the SmolVLA fast-build ELF identity check regenerates all 2,715 fast launches (629 distinct programs), fused panels included, through these generators and requires byte-identical ELFs.

@@ -20,6 +20,10 @@ make gen-rne_add NPU_MODEL=/path/to/npu-model   # the sequence on one register p
 
 `gen.py` writes the program text (`.S`), the 32-bit words npu_model's assembler produces (`.bin`), and a `.json` record into `build/rne_add/`. `kernel.yaml` is the machine-readable manifest.
 
+## Reference and bench results
+
+`reference.py` defines the bench cases and their FP32 PyTorch references for `lib/kernel_bench.py`: 1 case (TinyLlama prefill o_proj with the exact residual add), bit-exact against `ordered_matmul` plus the exact BF16 sum. [`RESULTS.md`](RESULTS.md) lists bit-exactness, cosine similarity and relative error against the FP32 reference, and npu_model model cycles (not RTL cycles) for each case, run on npu_model 47b8599 with `numerics="rtl"`.
+
 ## Tests and checks
 
 There is no standalone numeric unit test yet. Exactness is established by executing every TinyLlama launch that uses it on npu_model `47b8599` with `numerics="rtl"` (atlas-mlir `tools/tiny_full/export_capture.py --qualify-launches`), and register admission is covered by `kernels/projection_gemm/tests/test_program_checks.py`.

@@ -24,6 +24,10 @@ make gen-rope NPU_MODEL=/path/to/npu-model ARGS="--shape 32x2048x256"
 
 `gen.py` writes the program text (`.S`), the 32-bit words npu_model's assembler produces (`.bin`), and a `.json` record into `build/rope/`. `kernel.yaml` is the machine-readable manifest.
 
+## Reference and bench results
+
+`reference.py` defines the bench cases and their FP32 PyTorch references for `lib/kernel_bench.py`: 1 case (TinyLlama prefill q_proj with RoPE), bit-exact against `ordered_matmul` plus the RoPE RNE formula. [`RESULTS.md`](RESULTS.md) lists bit-exactness, cosine similarity and relative error against the FP32 reference, and npu_model model cycles (not RTL cycles) for each case, run on npu_model 47b8599 with `numerics="rtl"`.
+
 ## Tests and checks
 
 There is no standalone numeric unit test yet. Exactness is established by executing every TinyLlama RoPE launch on npu_model `47b8599` with `numerics="rtl"` in the export flow (atlas-mlir `tools/tiny_full/export_capture.py --qualify-launches`), and atlas-mlir `tools/tiny_full/check_programs.py` checks the rebuilt programs.

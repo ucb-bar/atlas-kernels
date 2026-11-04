@@ -19,8 +19,8 @@ lib/                    shared helpers: npu_model runner, register checks, weigh
 lib/golden/             independent numeric references (rational and NumPy)
 lib/fallback/           stand-ins for two atlas-mlir helpers, used only when this repository runs on its own
 lib/tests/
-kernels/<family>/       README.md, kernel.yaml (manifest), gen.py (generator CLI), generator modules, tests/
-coverage/               per-model coverage: which kernel runs every PyTorch op (COVERAGE.md)
+kernels/<family>/       README.md, kernel.yaml (manifest), gen.py (generator CLI), reference.py and RESULTS.md (bench), modules, tests/
+coverage/               per-model coverage (COVERAGE.md) and the combined bench table (RESULTS.md)
 ```
 
 | Family | Stage | Computes |
@@ -110,7 +110,9 @@ The generator files are byte-identical to the atlas-mlir sources that model rece
 
 ## Model coverage
 
-[`coverage/COVERAGE.md`](coverage/COVERAGE.md) lists, for TinyLlama and SmolVLA, every operator `torch.export` finds at every shape and where it runs: on an Atlas kernel family here, in host C, or as a build-time constant, with FLOP and launch counts checked against the qualified builds. It is the basis for kernel ablation and optimization work.
+[`coverage/COVERAGE.md`](coverage/COVERAGE.md) lists, for TinyLlama and SmolVLA, every operator `torch.export` finds at every shape and where it runs: on an Atlas kernel family here, in host C, or as a build-time constant, with FLOP and launch counts checked against the qualified builds. It is the basis for kernel ablation and optimization work. `make coverage` regenerates it from the committed fixtures.
+
+[`coverage/RESULTS.md`](coverage/RESULTS.md) is the per-kernel bench table from `lib/kernel_bench.py`: one representative real shape per family and model, on seeded synthetic inputs, with bit-exactness against `lib/golden` where a golden exists, cosine similarity and relative error against an FP32 PyTorch reference, and cycle counts. The cycles are npu_model Core cycle-model counts, not RTL cycles.
 
 ## License
 

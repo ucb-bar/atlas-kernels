@@ -22,6 +22,10 @@ make gen-rmsnorm NPU_MODEL=/path/to/npu-model ARGS="--rows 32"
 
 `gen.py` writes the program text (`.S`), the 32-bit words npu_model's assembler produces (`.bin`), and a `.json` record into `build/rmsnorm/`. `kernel.yaml` is the machine-readable manifest.
 
+## Reference and bench results
+
+`reference.py` defines the bench cases and their FP32 PyTorch references for `lib/kernel_bench.py`: 2 cases (TinyLlama prefill 128 rows and decode 1 row); no Atlas-arithmetic golden yet, so they report fidelity and cycles only. [`RESULTS.md`](RESULTS.md) lists bit-exactness, cosine similarity and relative error against the FP32 reference, and npu_model model cycles (not RTL cycles) for each case, run on npu_model 47b8599 with `numerics="rtl"`.
+
 ## Tests and checks
 
 `tests/test_norm_postpass.py` checks register hygiene (reserved scratch pairs and the default-sentinel refusal). There is no standalone numeric test yet; exactness is established by executing every TinyLlama norm launch on npu_model `47b8599` with `numerics="rtl"` in the export flow (atlas-mlir `tools/tiny_full/export_capture.py --qualify-launches`).

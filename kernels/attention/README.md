@@ -29,6 +29,10 @@ make gen-attention NPU_MODEL=/path/to/npu-model ARGS="--rows 177 --keys 177 --he
 
 `gen.py` writes the program text (`.S`), the 32-bit words npu_model's assembler produces (`.bin`), and a `.json` record into `build/attention/`. `kernel.yaml` is the machine-readable manifest.
 
+## Reference and bench results
+
+`reference.py` defines the bench cases and their FP32 PyTorch references for `lib/kernel_bench.py`: 2 cases (TinyLlama prefill causal 128x128 with 32/4 heads and FP8 output, SmolVLA prefix 177x177 with 15/5 heads); no Atlas-arithmetic golden yet, so they report fidelity and cycles only. [`RESULTS.md`](RESULTS.md) lists bit-exactness, cosine similarity and relative error against the FP32 reference, and npu_model model cycles (not RTL cycles) for each case, run on npu_model 47b8599 with `numerics="rtl"`.
+
 ## Tests and checks
 
 The program check rejects malformed register use at generation time. In atlas-mlir, `test/test_tiny_attention_v2_export.py`, `test/test_smol_fast_attention.py`, and `test/test_atlas_execution.py` (version 1, with `ATLAS_EXECUTION_MODEL_ROOT`) cover staging and execution, and the TinyLlama and SmolVLA capture flows execute every attention launch on npu_model `47b8599` with `numerics="rtl"` (`tools/tiny_full/attention_v2_worker.py`, `tools/capture_smolvla_attention.py --execute`). There is no standalone PyTorch reference test in this repository yet.
