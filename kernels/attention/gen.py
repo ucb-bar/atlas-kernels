@@ -12,6 +12,8 @@ import numpy as np  # noqa: E402
 from atlas_attention_v2_program import AttentionV2Config, assembly_v2, stage_v2  # noqa: E402
 
 args = parser(__doc__)
+args.add_argument("--variant", choices=("v2", "v2-no-halt-delay"), default="v2",
+                  help="explicit generator selection; v2 preserves existing kit programs")
 args.add_argument("--rows", type=int, required=True, help="query rows (1 for decode)")
 args.add_argument("--keys", type=int, required=True)
 args.add_argument("--head-dim", type=int, default=64, choices=(64, 128, 256))
@@ -24,6 +26,10 @@ args.add_argument("--mask-npy", help="arbitrary mask: NumPy bool array [rows, ke
 for name in ("q", "k", "v", "o"):
     args.add_argument(f"--{name}-exponent", type=int, default=0, help=f"FP8 scale exponent of {name}")
 args = args.parse_args()
+if args.variant == "v2-no-halt-delay" and args.head_dim != 64:
+    raise SystemExit("v2-no-halt-delay requires --head-dim 64")
+if args.variant == "v2-no-halt-delay":
+    from atlas_attention_v2_halt import assembly_v2
 query_heads, kv_heads = (int(value) for value in args.heads.split("/"))
 mask = args.mask or ("causal" if args.causal else "none")
 if (mask == "arbitrary") != (args.mask_npy is not None):

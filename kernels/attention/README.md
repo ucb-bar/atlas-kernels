@@ -21,6 +21,8 @@ The [shape-coverage bench](../../coverage/examples/shape_coverage/MODEL-BENCH.md
 
 `atlas_attention_program.py` is the first version (`AttentionConfig`, `stage`, `assembly`, `pack_tiles`, `unpack_tiles`), kept for the legacy TinyLlama attention worker.
 
+`atlas_attention_v2_halt.py` is the explicit `v2-no-halt-delay` variant. Its `assembly_v2` accepts the same arguments and removes only the dead terminal `delay 128`, retaining `dma.wait ch0` and `dma.wait ch1` before `ecall`. It delegates all other generation to the unchanged, SHA-pinned v2 module and rejects an unexpected tail. Existing imports and the CLI default still select the original v2 programs. See [HALT.md](HALT.md) for the source justification, qualification, and kit adoption pins.
+
 ## Shapes the models use
 
 | Model | Calls | Configuration |
@@ -34,6 +36,7 @@ The [shape-coverage bench](../../coverage/examples/shape_coverage/MODEL-BENCH.md
 make gen-attention NPU_MODEL=/path/to/npu-model ARGS="--rows 128 --keys 128 --heads 32/4 --causal --fp8"
 make gen-attention NPU_MODEL=/path/to/npu-model ARGS="--rows 177 --keys 177 --heads 15/5"
 make gen-attention NPU_MODEL=/path/to/npu-model ARGS="--rows 33 --keys 65 --heads 2/1 --head-dim 256 --causal"
+make gen-attention NPU_MODEL=/path/to/npu-model ARGS="--rows 1 --keys 129 --heads 32/4 --causal --query-start 128 --fp8 --variant v2-no-halt-delay"
 ```
 
 `gen.py` keeps the existing dimension-64 generator and artifact names by default; `--head-dim 128` or `--head-dim 256` selects the wide module and adds a dimension suffix. It writes the program text (`.S`), the 32-bit words npu_model's assembler produces (`.bin`), and a `.json` record into `build/attention/`. `kernel.yaml` is the machine-readable manifest.
@@ -47,3 +50,5 @@ make gen-attention NPU_MODEL=/path/to/npu-model ARGS="--rows 33 --keys 65 --head
 Run `make test-lib test-coverage NPU_MODEL=/path/to/npu-model` from the repository root. See [shared test coverage](../../README.md#running-the-tests).
 
 The program check rejects malformed register use at generation time. In atlas-mlir, `test/test_tiny_attention_v2_export.py`, `test/test_smol_fast_attention.py`, and `test/test_atlas_execution.py` (version 1, with `ATLAS_EXECUTION_MODEL_ROOT`) cover staging and execution, and the TinyLlama and SmolVLA capture flows execute every attention launch on npu_model `47b8599` with `numerics="rtl"` (`tools/tiny_full/attention_v2_worker.py`, `tools/capture_smolvla_attention.py --execute`). The wide module adds 7 standalone tests in `tests/test_attention_wide.py`: admission and capacity checks, padded output layout round trips, BF16 scale rounding, 8 exact single-key attention variants with Q=K=0, a seeded causal tail case with 2 KV heads and explicit query position, a small seeded random multi-key GQA case with fidelity and exact timed-versus-functional output checks, and a dimension-256 timed npu_model regression that checks segmented DMA and exact output against the functional model. Execution tests require `ATLAS_NPU_MODEL_ROOT`; the Make target sets it from `NPU_MODEL`. The exact single-key cases use Q=K=0 and varying V values, 4 query heads, and 2 KV heads, so the expected output is independently V repeated across the GQA groups. General random-input attention still has no independent Atlas-arithmetic golden.
+
+`make test-attention NPU_MODEL=/path/to/npu-model` checks the pinned source identity, the exact one-word change across all 7 model shapes, explicit CLI selection, refusal of changed tails, and bit-identical BF16 and packed FP8 execution on small cases. See [HALT.md](HALT.md) for the archived 45-program qualification scope, completion argument, and kit adoption requirements.

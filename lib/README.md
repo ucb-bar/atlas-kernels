@@ -38,6 +38,8 @@ Status for the TinyLlama, SmolVLA, and ResNet50 kits (1,589 distinct programs, 1
 
 `--verify-atlas-generated-schedule` does not apply to these programs. It needs the resource contracts that atlas-mlir's virtual-IR lowering attaches, and hand-written kernels have none.
 
+Attention also provides an explicitly selected [`v2-no-halt-delay`](../kernels/attention/HALT.md) variant. It preserves the pinned original module and removes the terminal pad while retaining both DMA waits. This follow-up does not change the shipped kit programs or their historical tier counts above.
+
 ### Requirements
 
 `atlas-opt` and `atlas-emit` from an atlas-mlir build. Name the build's `bin` directory with `--atlas-mlir-bin` or `ATLAS_MLIR_BIN`; atlas-mlir's CTest passes `ATLAS_OOT_BIN_DIR`, and `PATH` is the last resort. Missing tools are an error, never a silent fallback to the assembler. The assembler comparison and `run` also need npu_model 47b8599 importable (on `PYTHONPATH`, or imported by the script being run).
