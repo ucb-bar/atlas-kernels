@@ -2,7 +2,13 @@
 
 Device-kernel generators for the Atlas NPU, with the shared helpers and golden references that check them. Each generator is a Python module that emits Atlas assembly text for one launch; npu_model's assembler encodes it, and programs are checked bit-exactly against unmodified npu_model `47b8599` with `numerics="rtl"`. The library holds every kernel that the TinyLlama, SmolVLA, and ResNet50 bringups launch. [atlas-mlir](https://github.com/ucb-bar/atlas-mlir) pins it as the `third_party/atlas-kernels` submodule and builds host programs, captures, and ELFs on top of it.
 
-No kernel here goes through the Atlas MLIR dialect yet: the generators are hand-written schedules in Python. Host graphs (the C that sequences launches and runs host-side operators) live in atlas-mlir and Merlin, not here.
+The generators are hand-written schedules in Python; no kernel is lowered from the Atlas MLIR dialect yet. `lib/atlas_backend.py` can encode their assembly through the Atlas compiler backend instead (machine IR, `atlas-opt` verifiers, `atlas-emit`) and refuses any program whose words differ from the assembler's. Host graphs (the C that sequences launches and runs host-side operators) live in atlas-mlir and Merlin, not here.
+
+## How this fits with atlas-mlir and Merlin
+
+This repository owns the Atlas Python kernel generators in `kernels/<family>/`, shared helpers in `lib/`, and golden references in `lib/golden/`. [atlas-mlir](https://github.com/ucb-bar/atlas-mlir/tree/sota/bringup-docs) pins it as the `third_party/atlas-kernels` submodule and retains the compiler, model bringup tooling, and host entry points. Merlin's `examples/atlas/comparisons/` retains the PyTorch captures, hand-written model C graphs, and comparison workflow. See the [model bringup guide](https://github.com/ucb-bar/atlas-mlir/blob/sota/bringup-docs/docs/bringing-up-a-model.md) for the end-to-end flow and its current limits.
+
+The [model coverage table](coverage/COVERAGE.md) maps exported TinyLlama and SmolVLA ops and shapes to kernel families, host code, or build-time constants. Its `coverage/mapping.yaml` records placement in the qualified builds; it is not an automatic kernel selector. The `select` rules in each family's `kernel.yaml` describe which family and variant serve an op, dtype, and shape, but nothing reads them automatically yet either. The model kernels emit Atlas assembly text that npu_model's assembler encodes by default (or the compiler backend, through `lib/atlas_backend.py run`), and the host graphs remain hand-written C.
 
 ## Layout
 
@@ -82,11 +88,12 @@ It writes the program text (`.S`), the 32-bit words npu_model's assembler produc
 
 ## How kernels are checked against npu_model
 
-Kernels are checked at three levels.
+Kernels are checked at three levels, and their encoding can be checked by a fourth.
 
 1. Static checks at generation time. Contraction entry points are wrapped by `lib/atlas_program_checks.py` `checked_assembly`, which rejects odd matrix-register pairs, bank aliases, and scalar-scratch collisions between a schedule and its fused epilogue. Attention v2 programs pass `check_program_v2`.
 2. Symbolic and golden checks in the tests here. The reuse proofs (`kernels/projection_gemm/tests/reuse_proof.py`) interpret every DMA, wait, and MXU operation of a schedule and check addresses, K order, bank ownership, and output placement. `lib/golden/` provides an exact rational FP8/BF16 tile oracle and an equivalent NumPy ordered matmul for whole-matrix references. Frozen SHA-256 digests guard the default programs against unintended change.
 3. Execution on npu_model. `lib/atlas_execution.py` `Executor` assembles a program with npu_model's own assembler, runs it on `ArchState` with `numerics="rtl"`, refuses any npu_model revision other than `47b8599`, and compares the complete final DRAM arena (the output and everything outside it) with the expected bytes. `lib/atlas_rtl_reference.py` executes instruction by instruction with `numerics="rtl"`, including scalar branch delay slots; the ResNet layout-kernel tests use it. atlas-mlir's capture and export flows run model launches through `Executor` on real captured inputs (for TinyLlama, `tools/tiny_full/export_capture.py --qualify-launches` checks every launch).
+4. Encoding through the compiler backend. `lib/atlas_backend.py` translates each program to Atlas machine IR, runs `atlas-opt --verify-atlas-machine-stream` and `--verify-atlas-timing`, encodes it with `atlas-emit`, and requires the words to equal npu_model's assembler words. Each program gets a tier: `verified` (both verifiers accept it), `stream-verified` (the machine-stream verifier accepts it and the timing verifier rejects it), or `encode-only` (no verifier accepted it or verification was skipped). For the 1,589 distinct programs the TinyLlama, SmolVLA, and ResNet50 kit ELFs launch, all encode to the assembler's words: 13 are `verified`, 1,576 are `stream-verified` (the timing verifier cannot prove double-buffered DMA ranges disjoint and times one block at a time), and 0 are `encode-only`. [`lib/README.md`](lib/README.md) has the details and commands.
 
 ## Using the library from atlas-mlir
 
