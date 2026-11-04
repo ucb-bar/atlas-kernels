@@ -112,6 +112,35 @@ def sample(mnemonic, cls):
     return (mnemonic + ' ' + ', '.join(out)).strip()
 
 
+class SourceIdentityTest(unittest.TestCase):
+    def test_manifest_tracks_working_bytes_and_missing_symlinks(self):
+        import subprocess, tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'source'
+            build = Path(directory) / 'build'
+            source.mkdir()
+            build.mkdir()
+            (source / 'file.txt').write_text('original')
+            (source / 'link.txt').symlink_to('file.txt')
+            def git(*args):
+                return subprocess.run(['git', '-C', str(source), *args], check=True,
+                                      capture_output=True, text=True).stdout.strip()
+            git('init', '-q')
+            git('add', 'file.txt', 'link.txt')
+            git('-c', 'user.name=Test', '-c', 'user.email=test@example.com',
+                'commit', '-qm', 'test: fixture')
+            (build / 'CMakeCache.txt').write_text(f'CMAKE_HOME_DIRECTORY:INTERNAL={source}\n')
+            clean = atlas_backend._build_source(build)
+            self.assertEqual(clean['commit'], git('rev-parse', 'HEAD'))
+            self.assertFalse(clean['modified'])
+            self.assertRegex(clean['tracked_source_sha256'], '^[0-9a-f]{64}$')
+            (source / 'file.txt').write_text('modified')
+            (source / 'link.txt').unlink()
+            dirty = atlas_backend._build_source(build)
+            self.assertTrue(dirty['modified'])
+            self.assertNotEqual(dirty['tracked_source_sha256'], clean['tracked_source_sha256'])
+
+
 @unittest.skipUnless(TOOLS, 'atlas-opt and atlas-emit not found')
 class BackendTest(unittest.TestCase):
     def test_compile_verifies_and_encodes(self):
@@ -130,13 +159,26 @@ class BackendTest(unittest.TestCase):
         self.assertEqual(atlas_backend.rule(result.timing_diagnostics[0]).split(' op ')[0], "'atlas.vload'")
 
     def test_stream_rejection_is_encode_only_with_the_rule(self):
-        result = atlas_backend.compile('beq x0, x0, 3\nnop\necall\n')   # target past the program end
+        result = atlas_backend.compile('beq x0, x0, 3\nnop\necall\n', min_tier='encode-only')   # target past the program end
         self.assertEqual(result.tier, 'encode-only')
         self.assertIn('escapes the LLVM inline assembly block', result.stream_diagnostics[0])
         self.assertEqual(len(result.words), 3)
 
+    def test_stream_rejection_fails_by_default(self):
+        with self.assertRaisesRegex(atlas_backend.BackendError, 'below required stream-verified'):
+            atlas_backend.compile('beq x0, x0, 3\nnop\necall\n')
+
+    def test_verified_minimum_rejects_timing_failure(self):
+        source = 'li x5, 0\nli x6, 0\nli x7, 1024\ndma.load x5, x6, x7, ch0\nvload m1, 0(x5)\ndma.wait ch0\necall\n'
+        with self.assertRaisesRegex(atlas_backend.BackendError, 'below required verified'):
+            atlas_backend.compile(source, min_tier='verified')
+
+    def test_skipping_verification_requires_explicit_tier(self):
+        with self.assertRaisesRegex(atlas_backend.BackendError, 'below required stream-verified'):
+            atlas_backend.compile('ecall\n', verify=False)
+
     def test_no_verify_is_encode_only(self):
-        result = atlas_backend.compile('fence\necall\n', verify=False)
+        result = atlas_backend.compile('fence\necall\n', verify=False, min_tier='encode-only')
         self.assertEqual((result.tier, result.stream, result.timing, result.words), ('encode-only', None, None, (0x0f, 0x73)))
 
     def test_field_rejection_raises(self):
@@ -164,7 +206,7 @@ class BackendTest(unittest.TestCase):
             with self.subTest(line=line):
                 words = [int(w) for w in input_to_program(io.StringIO(text)).assemble()]
                 # Lone instructions are not timing-correct programs, so only the stream verifier must accept them.
-                self.assertEqual(atlas_backend.cross_checked(text, words).stream, 'pass')
+                self.assertEqual(atlas_backend.cross_checked(text, words, min_tier='encode-only').stream, 'pass')
 
     @unittest.skipUnless(MODEL, 'npu_model 47b8599 not importable')
     def test_generated_projection_kernel(self):
@@ -180,7 +222,7 @@ class BackendTest(unittest.TestCase):
 class RunWrapperTest(unittest.TestCase):
     """`atlas_backend.py run` cross-checks every assembly a script performs and writes a receipt."""
 
-    def run_script(self, body, backend='atlas-mlir'):
+    def run_script(self, body, backend='atlas-mlir', options=()):
         import json, subprocess, tempfile
         directory = Path(tempfile.mkdtemp(prefix='atlas-backend-run-'))
         script = directory / 'job.py'
@@ -188,7 +230,7 @@ class RunWrapperTest(unittest.TestCase):
         receipt = directory / 'receipt.json'
         lib = Path(atlas_backend.__file__).absolute().parent
         completed = subprocess.run([sys.executable, str(lib / 'atlas_backend.py'), 'run', '--backend', backend,
-                                    '--receipt', str(receipt), '--', str(script), '--flag', 'value'],
+                                    '--receipt', str(receipt), *options, '--', str(script), '--flag', 'value'],
                                    capture_output=True, text=True, env=dict(os.environ))
         return completed, json.loads(receipt.read_text())
 
@@ -208,6 +250,38 @@ class RunWrapperTest(unittest.TestCase):
         self.assertEqual(receipt['summary']['programs'], 2)
         self.assertEqual(receipt['summary']['tiers'], {'verified': 2})
         self.assertTrue(all(p['words_equal_assembler'] for p in receipt['programs']))
+
+    def test_empty_wrapped_script_fails(self):
+        completed, receipt = self.run_script('pass\n')
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn('encoded 0 distinct programs', receipt['error'])
+
+    def test_fresh_python_subprocess_does_not_satisfy_coverage(self):
+        body = ('import subprocess, sys\n'
+                'subprocess.run([sys.executable, "-c", '
+                '\'import io; from npu_model.util.converter import input_to_program; '
+                'input_to_program(io.StringIO("ecall\\n")).assemble()\'], check=True)\n')
+        completed, receipt = self.run_script(body)
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertEqual(receipt['summary']['programs'], 0)
+        self.assertIn('encoded 0 distinct programs', receipt['error'])
+
+    def test_expected_program_count_fails_even_with_successful_encodes(self):
+        completed, receipt = self.run_script(self.JOB, options=('--expect-min-programs', '3'))
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertEqual(receipt['summary']['programs'], 2)
+        self.assertIn('expected at least 3', receipt['error'])
+
+    def test_run_enforces_minimum_tier_and_keeps_rejected_record(self):
+        job = ('import io\nfrom npu_model.util.converter import input_to_program\n'
+               'input_to_program(io.StringIO("beq x0, x0, 3\\nnop\\necall\\n")).assemble()\n')
+        completed, receipt = self.run_script(job)
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertEqual(receipt['summary']['tiers'], {'encode-only': 1})
+        self.assertIn('below required stream-verified', receipt['error'])
+        completed, receipt = self.run_script(job, options=('--min-tier', 'encode-only'))
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(receipt['summary']['tiers'], {'encode-only': 1})
 
     def test_assembler_backend_records_without_the_compiler(self):
         completed, receipt = self.run_script(self.JOB, backend='assembler')

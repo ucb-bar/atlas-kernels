@@ -97,12 +97,12 @@ def flops(op, inputs, outputs):
     out = outputs[0][0]
     if op == 'aten.linear.default':
         k = inputs[0][0][-1]
-        return 2 * numel(out) * k
+        return 2 * numel(out) * k + bias_flops(op, inputs, outputs)
     if op in ('aten.matmul.default', 'aten.bmm.default', 'aten.mm.default'):
         return 2 * numel(out) * inputs[0][0][-1]
     if op.startswith('aten.conv2d'):
         weight = inputs[1][0]
-        return 2 * numel(out) * numel(weight[1:])
+        return 2 * numel(out) * numel(weight[1:]) + bias_flops(op, inputs, outputs)
     if op == 'aten.scaled_dot_product_attention.default':
         q, k = inputs[0][0], inputs[1][0]
         return 4 * numel(q[:-1]) * k[-2] * q[-1] + 5 * numel(q[:-1]) * k[-2]
@@ -114,6 +114,14 @@ def flops(op, inputs, outputs):
     if name in ('softmax', 'layer_norm'):
         return 5 * numel(out)
     return numel(out)
+
+
+def bias_flops(op, inputs, outputs):
+    """Linear and Conv2d bias broadcasts add once per output element, when a bias tensor exists."""
+    if op not in PROJECTION or len(inputs) < 3 or not outputs:
+        return 0
+    shape = outputs[0][0]
+    return math.prod(shape) if all(type(d) is int for d in shape) else 0
 
 
 def source(node):
@@ -150,6 +158,9 @@ def walk(graph_module, strip, records, inherited=None):
         outputs = tensors(node.meta.get('val'))
         records.append({'index': len(records), 'op': op, 'module': module, 'call': call, 'source': source(node),
                         'inputs': inputs, 'outputs': outputs, 'flops': flops(op, inputs, outputs)})
+        bias = bias_flops(op, inputs, outputs)
+        if bias:
+            records[-1]['bias_flops'] = bias
 
 
 def template(module):
@@ -169,6 +180,8 @@ def aggregate(records):
                                        'outputs': row['outputs'], 'flops_each': row['flops'], 'count': 0,
                                        'layers': set(), 'steps': set()})
         item['count'] += 1
+        if row.get('bias_flops'):
+            item['bias_flops_each'] = row['bias_flops']
         if layer is not None:
             item['layers'].add(layer)
         item['steps'].add(row['step'])
@@ -207,15 +220,45 @@ def attention(records):
 def environment():
     import numpy
     import torch
-    import transformers
-    result = {'python': sys.version.split()[0], 'torch': torch.__version__, 'transformers': transformers.__version__,
+    result = {'python': sys.version.split()[0], 'torch': torch.__version__,
               'numpy': numpy.__version__}
+    try:
+        import transformers
+        result['transformers'] = transformers.__version__
+    except ImportError:
+        pass
     try:
         import importlib.metadata
         result['lerobot'] = importlib.metadata.version('lerobot')
     except Exception:
         pass
     return result
+
+
+def load_adapter(path):
+    """Load a read-only Python adapter exposing get_model_and_inputs() -> (Module, tuple[Tensor, ...])."""
+    import importlib.util
+    import torch
+    path = Path(path).absolute()
+    if any(re.search('hammer|vlsi', part, re.I) for part in path.parts):
+        raise ValueError(f'restricted path: {path}')
+    path = path.resolve(strict=True)
+    if any(re.search('hammer|vlsi', part, re.I) for part in path.parts):
+        raise ValueError(f'restricted path: {path}')
+    loader_identity = identity(path)
+    spec = importlib.util.spec_from_file_location('atlas_coverage_model_adapter', path)
+    module = importlib.util.module_from_spec(spec)
+    previous = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.dont_write_bytecode = previous
+    model, inputs = module.get_model_and_inputs()
+    if not isinstance(model, torch.nn.Module) or not isinstance(inputs, tuple):
+        raise ValueError('loader must return (torch.nn.Module, tuple of positional inputs)')
+    model.eval().requires_grad_(False)
+    return model, inputs, '', {'loader': loader_identity}, {'inputs': tensors(inputs)}
 
 
 def tinyllama(args):
@@ -302,6 +345,9 @@ def phases(model, records):
     """TinyLlama: step = embedding calls so far minus one. SmolVLA: vision, prefix, then one step per action_in_proj."""
     seen = 0
     for row in records:
+        if model not in ('tinyllama', 'smolvla'):
+            row['step'], row['phase'] = 0, 'inference'
+            continue
         if model == 'tinyllama':
             seen += row['op'] == 'aten.embedding.default'
             row['step'] = max(seen - 1, 0)
@@ -355,7 +401,8 @@ def dumps(value):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('model', choices=('tinyllama', 'smolvla'))
+    parser.add_argument('model', help='tinyllama, smolvla, or a new model name with --loader')
+    parser.add_argument('--loader', type=Path, help='Python file exposing get_model_and_inputs()')
     parser.add_argument('--out', type=Path, required=True, help='new directory for the full node list and graph')
     parser.add_argument('--fixture', type=Path, help='write the aggregated rows here (coverage/fixture/<model>.json)')
     parser.add_argument('--checkpoint', type=Path, help='TinyLlama snapshot directory at the pinned revision')
@@ -367,11 +414,16 @@ def main():
     parser.add_argument('--observation', type=Path, help='SmolVLA compiled observation archive (observation.npz)')
     parser.add_argument('--capture-receipt', help='optional local Merlin capture receipt to cross-check calls against')
     args = parser.parse_args()
+    if args.loader and args.model in ('tinyllama', 'smolvla'):
+        parser.error('--loader requires a distinct new model name to preserve the pinned focus-model adapters')
+    if not args.loader and args.model not in ('tinyllama', 'smolvla'):
+        parser.error('new models require --loader')
     import torch
     torch.set_num_threads(8)
     args.out.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
-    wrapper, inputs, strip, sources, trace = (tinyllama if args.model == 'tinyllama' else smolvla)(args)
+    wrapper, inputs, strip, sources, trace = (load_adapter(args.loader) if args.loader else
+        (tinyllama if args.model == 'tinyllama' else smolvla)(args))
     program = torch.export.export(wrapper, inputs, strict=False)
     exported = time.monotonic() - started
     (args.out / 'graph.txt').write_text(program.graph_module.print_readable(print_output=False))

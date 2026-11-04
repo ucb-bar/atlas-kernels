@@ -6,11 +6,11 @@ Which Atlas kernels each focus model uses, derived from the real PyTorch model r
 
 | File | Role |
 | --- | --- |
-| `export_ops.py` | Runs `torch.export.export(strict=False)` on one complete inference and writes `fixture/<model>.json` (aggregated op rows with module path, source line, phase, shapes, dtypes, FLOPs, counts, and the ordered projection and attention call indices) and, under the ignored `out/`, the full node list and graph text. |
+| `export_ops.py` | Runs `torch.export.export(strict=False)` on one complete inference and writes `fixture/<model>.json` (aggregated op rows with module path, source line, phase, shapes, dtypes, FLOPs, bias component FLOPs, counts, and the ordered projection and attention call indices) and, under the ignored `out/`, the full node list and graph text. A new model can supply `--loader FILE`. |
 | `fixture/*.json` | The committed aggregated rows, read by `build_table.py`, its tests, and the atlas-mlir coverage test. |
-| `mapping.yaml` | First-match rules that place every fixture row: `atlas:<family>` (a `kernels/<family>/` directory, the family names of the atlas-kernels kernel manifests), `host:<file>`, or `build:<file>`, each with citations. |
-| `build_table.py` | Applies the rules and fails on any unmapped row, unused rule, or device-work count that differs from the qualified builds; writes this file and `coverage.json`. `--check-cites ATLAS_MLIR MERLIN ATLAS_KERNELS` also requires every cited file to exist and every family to have a `kernels/<family>/kernel.yaml` manifest of that name. |
-| `tests/` | Checks that this file regenerates exactly, that every rule is needed, and that device work matches the builds. |
+| `mapping.yaml` | First-match rules that place every fixture row: `atlas:<family>` (a `kernels/<family>/` directory, the family names of the atlas-kernels kernel manifests), `host:<file>`, or `build:<file>`, each with citations. A biased Linear or Conv2d uses `bias_where` for its addition component. |
+| `build_table.py` | Applies the rules and fails on any unmapped row, unused rule, or missing or incorrect mandatory device-work category; writes this file and `coverage.json`. `--check-cites ATLAS_MLIR MERLIN ATLAS_KERNELS` also requires every cited file to exist and every family to have a `kernels/<family>/kernel.yaml` manifest of that name. `--inventory MODEL=JSON` selects a new inventory; `--allow-unmapped` writes an explicitly INCOMPLETE report without bypassing other gates. |
+| `tests/` | Checks exact regeneration, rule coverage, every mandatory launch category including missing-category mutations, complete bias placement, and unmapped-report behavior. |
 
 ## How mapping.yaml relates to Merlin's selection.yaml
 
@@ -37,11 +37,27 @@ python3 coverage/build_table.py
 
 ## Adding a model
 
-Add a loader to `export_ops.py` that builds the model and its exact captured input, export it, add `rules.<model>` and `builds.<model>` to `mapping.yaml` and the model to `MODELS` in `build_table.py`, and rerun until no row is unmapped. Rows that need a kernel the library lacks are that model's kernel work list. Gemma2 (GM) and pi0 have placeholder columns.
+Write a Python loader exposing `get_model_and_inputs()`, which returns `(torch.nn.Module, tuple_of_positional_inputs)`. It must construct the model and exact captured inputs without network access. The exporter records the loader's SHA-256, exports in eval mode with gradients disabled, and assigns a single `inference` phase; custom cache or denoising phase semantics need an adapter like the focus-model loaders. Loader imports do not write bytecode alongside the source. This adapter exports shapes and operations; it does not capture real values or generate a host graph.
+
+Merlin's `examples/workloads/causal_decoder/loader.py` is a deterministic small example with an 8-token input and no checkpoint dependency. Run these commands from the atlas-kernels root, with `MERLIN_ROOT` set to the Merlin checkout and `TORCH_PYTHON` set to a Python interpreter with torch and NumPy:
+
+```sh
+"$TORCH_PYTHON" -B coverage/export_ops.py causal_decoder \
+  --loader "$MERLIN_ROOT/examples/workloads/causal_decoder/loader.py" \
+  --out "$OUT/causal_decoder/export" --fixture "$OUT/causal_decoder/fixture.json"
+python3 -B coverage/build_table.py --inventory "causal_decoder=$OUT/causal_decoder/fixture.json" \
+  --allow-unmapped --out "$OUT/causal_decoder/report"
+```
+
+The committed small report is [examples/causal_decoder/REPORT.md](examples/causal_decoder/REPORT.md). One command regenerates it and retains the full export and placement artifacts under `$OUT`: `python3 -B coverage/examples/causal_decoder/regenerate.py --out "$OUT"` (with `MERLIN_ROOT` and `TORCH_PYTHON` set as above). The driver Python needs PyYAML.
+
+The report is INCOMPLETE: no causal_decoder placement rules or qualified build are registered, and every exported row appears in the unmapped work list with phase, module, source, op, shape, count, and FLOPs. The JSON retains each complete unmapped record. Omitting `--allow-unmapped` exits nonzero and writes no report. This is a demonstrated inventory and unsupported-op report, not demonstrated model execution on Atlas. The same loader contract accepts other models, but Gemma2 (GM) and pi0 remain extension work.
+
+To implement placement, add `rules.<model>` and `builds.<model>` to `mapping.yaml`, register a display column in `MODELS` if desired, and pass `--inventory MODEL=JSON` until no row is unmapped. Add explicit mandatory launch counts in `REQUIRED_LAUNCHES` when the model has a qualified build. A row that needs an absent kernel or host implementation is an implementation work item. Rules must place a biased projection's `bias_where` component separately; that addition does not create a second projection call.
 
 ## Limits
 
-Placement follows the qualified builds, which place every op identically in default and fast; a build that moves an op needs a rule restricted to its phase or shape. Rules match model source lines and shapes of the pinned library versions, so a new Transformers or LeRobot version needs its rules rechecked. FLOPs count multiply-adds twice and other arithmetic once per element, so they rank work rather than time it. Zero-FLOP rows (views, casts, and index construction) are placed with the code that performs that layout. The export runs on fake tensors, so it checks shapes and structure, not numerics.
+Placement follows the qualified builds, which place every op identically in default and fast; a build that moves an op needs a rule restricted to its phase or shape. Rules match model source lines and shapes of the pinned library versions, so a new Transformers or LeRobot version needs its rules rechecked. FLOPs count multiply-adds twice and other arithmetic once per element, so they rank work rather than time it. Linear and Conv2d totals include one bias addition per output element when a bias tensor exists; placement splits those additions from the GEMM component. SmolVLA has 172,539,136 bias additions: 75,497,472 in the fused vision fc1 post-pass and 97,041,664 on the host. The split preserves export node counts and projection invocation counts. Zero-FLOP rows (views, casts, and index construction) are placed with the code that performs that layout. The export runs on fake tensors, so it checks shapes and structure, not numerics.
 
 ## Coverage
 
@@ -73,6 +89,8 @@ Fast: TinyLlama fast builds: the same 1,038 launches with FP8 weights read in pl
 | projection_panels | not derived | 840 |
 | attention | 66 | 66 |
 | rmsnorm | 132 | 132 |
+
+Projection panel counts are informational; the export derives calls, not physical panels.
 
 FLOPs: Atlas 272.144 GFLOP, host 0.001 GFLOP (99.9995% of runtime FLOPs on Atlas); build-time constants 0.000 GFLOP, not run on the target.
 
@@ -235,17 +253,20 @@ Fast: SmolVLA fast builds: the same bundle and launches with immutable linked we
 | attention | 200 | 200 |
 | smol_fusion_calls | 24 | 24 |
 
-FLOPs: Atlas 600.240 GFLOP, host 0.409 GFLOP (99.9320% of runtime FLOPs on Atlas); build-time constants 0.006 GFLOP, not run on the target.
+Projection panel counts are informational; the export derives calls, not physical panels.
+
+FLOPs: Atlas 600.315 GFLOP, host 0.506 GFLOP (99.9158% of runtime FLOPs on Atlas); build-time constants 0.006 GFLOP, not run on the target.
 
 | where | op instances | GFLOP |
 | --- | ---: | ---: |
 | `atlas:attention` | 3,736 | 87.172 |
 | `atlas:projection_gemm` | 1,421 | 512.993 |
-| `atlas:smol_fusion` | 24 | 0.075 |
+| `atlas:smol_fusion` | 48 | 0.151 |
 | `build:atlas-kernels/kernels/attention/atlas_attention_v2_program.py` | 20 | 0.004 |
 | `build:merlin/examples/atlas/comparisons/smol_policy_block.c` | 2,992 | 0.002 |
 | `build:merlin/examples/atlas/comparisons/smol_policy_graph.c` | 161 | 0.000 |
 | `build:merlin/examples/atlas/comparisons/smol_vision_graph.c` | 56 | 0.000 |
+| `host:atlas-mlir/runtime/smol_policy_raw.c` | 163 | 0.097 |
 | `host:merlin/examples/atlas/comparisons/smol_host_controls.c` | 240 | 0.000 |
 | `host:merlin/examples/atlas/comparisons/smol_host_ops.c` | 3,854 | 0.174 |
 | `host:merlin/examples/atlas/comparisons/smol_host_rope.c` | 4,592 | 0.038 |
@@ -258,6 +279,7 @@ FLOPs: Atlas 600.240 GFLOP, host 0.409 GFLOP (99.9320% of runtime FLOPs on Atlas
 | phase | module | op | shape | count | where | GFLOP |
 | --- | --- | --- | --- | ---: | --- | ---: |
 | vision | `vlm_with_expert.vlm.model.vision_model.embeddings.patch_embedding` | `conv2d.padding` | 1x3x512x512, 768x3x16x16 -> 1x768x32x32 bfloat16 | 2 | `atlas:projection_gemm` | 2.416 |
+| vision | `vlm_with_expert.vlm.model.vision_model.embeddings.patch_embedding` | `add.Tensor` bias | 1x3x512x512, 768x3x16x16 -> 1x768x32x32 bfloat16 | 2 | `host:atlas-mlir/runtime/smol_policy_raw.c` | 0.002 |
 | vision | `vlm_with_expert.vlm.model.vision_model.embeddings` | `sum.default` | 32 -> scalar int64 | 2 | `build:merlin/examples/atlas/comparisons/smol_vision_graph.c` | 0.000 |
 | vision | `vlm_with_expert.vlm.model.vision_model.embeddings` | `sum.default` | 32 -> scalar int64 | 2 | `build:merlin/examples/atlas/comparisons/smol_vision_graph.c` | 0.000 |
 | vision | `vlm_with_expert.vlm.model.vision_model.embeddings` | `add.Tensor` | 1x1024x768, 1x1024x768 -> 1x1024x768 bfloat16 | 2 | `host:merlin/examples/atlas/comparisons/smol_host_ops.c` | 0.002 |
@@ -265,21 +287,28 @@ FLOPs: Atlas 600.240 GFLOP, host 0.409 GFLOP (99.9320% of runtime FLOPs on Atlas
 | vision | `vlm_with_expert.vlm.model.vision_model` | `masked_fill.Scalar` | 1x1x1024x1024, 1x1x1024x1024 -> 1x1x1024x1024 bfloat16 | 2 | `build:atlas-kernels/kernels/attention/atlas_attention_v2_program.py` | 0.002 |
 | vision | `vlm_with_expert.vlm.model.vision_model.encoder.layers.*.layer_norm1` | `layer_norm.default` | 1x1024x768, 768 -> 1x1024x768 bfloat16 | 24 | `host:merlin/examples/atlas/comparisons/smol_vision_ops.c` | 0.094 |
 | vision | `vlm_with_expert.vlm.model.vision_model.encoder.layers.*.self_attn.q_proj` | `linear.default` | 1x1024x768, 768x768 -> 1x1024x768 bfloat16 | 24 | `atlas:projection_gemm` | 28.991 |
+| vision | `vlm_with_expert.vlm.model.vision_model.encoder.layers.*.self_attn.q_proj` | `add.Tensor` bias | 1x1024x768, 768x768 -> 1x1024x768 bfloat16 | 24 | `host:atlas-mlir/runtime/smol_policy_raw.c` | 0.019 |
 | vision | `vlm_with_expert.vlm.model.vision_model.encoder.layers.*.self_attn.k_proj` | `linear.default` | 1x1024x768, 768x768 -> 1x1024x768 bfloat16 | 24 | `atlas:projection_gemm` | 28.991 |
+| vision | `vlm_with_expert.vlm.model.vision_model.encoder.layers.*.self_attn.k_proj` | `add.Tensor` bias | 1x1024x768, 768x768 -> 1x1024x768 bfloat16 | 24 | `host:atlas-mlir/runtime/smol_policy_raw.c` | 0.019 |
 | vision | `vlm_with_expert.vlm.model.vision_model.encoder.layers.*.self_attn.v_proj` | `linear.default` | 1x1024x768, 768x768 -> 1x1024x768 bfloat16 | 24 | `atlas:projection_gemm` | 28.991 |
+| vision | `vlm_with_expert.vlm.model.vision_model.encoder.layers.*.self_attn.v_proj` | `add.Tensor` bias | 1x1024x768, 768x768 -> 1x1024x768 bfloat16 | 24 | `host:atlas-mlir/runtime/smol_policy_raw.c` | 0.019 |
 | vision | `vlm_with_expert.vlm.model.vision_model.encoder.layers.*.self_attn` | `scaled_dot_product_attention.default` | 1x12x1024x64, 1x12x1024x64 -> 1x12x1024x64 bfloat16 | 24 | `atlas:attention` | 78.819 |
 | vision | `vlm_with_expert.vlm.model.vision_model.encoder.layers.*.self_attn.out_proj` | `linear.default` | 1x1024x768, 768x768 -> 1x1024x768 bfloat16 | 24 | `atlas:projection_gemm` | 28.991 |
+| vision | `vlm_with_expert.vlm.model.vision_model.encoder.layers.*.self_attn.out_proj` | `add.Tensor` bias | 1x1024x768, 768x768 -> 1x1024x768 bfloat16 | 24 | `host:atlas-mlir/runtime/smol_policy_raw.c` | 0.019 |
 | vision | `vlm_with_expert.vlm.model.vision_model.encoder.layers.*` | `add.Tensor` | 1x1024x768, 1x1024x768 -> 1x1024x768 bfloat16 | 24 | `host:merlin/examples/atlas/comparisons/smol_host_ops.c` | 0.019 |
 | vision | `vlm_with_expert.vlm.model.vision_model.encoder.layers.*.layer_norm2` | `layer_norm.default` | 1x1024x768, 768 -> 1x1024x768 bfloat16 | 24 | `host:merlin/examples/atlas/comparisons/smol_vision_ops.c` | 0.094 |
 | vision | `vlm_with_expert.vlm.model.vision_model.encoder.layers.*.mlp.fc1` | `linear.default` | 1x1024x768, 3072x768 -> 1x1024x3072 bfloat16 | 24 | `atlas:projection_gemm` | 115.964 |
+| vision | `vlm_with_expert.vlm.model.vision_model.encoder.layers.*.mlp.fc1` | `add.Tensor` bias | 1x1024x768, 3072x768 -> 1x1024x3072 bfloat16 | 24 | `atlas:smol_fusion` | 0.075 |
 | vision | `vlm_with_expert.vlm.model.vision_model.encoder.layers.*.mlp.activation_fn` | `gelu.default` | 1x1024x3072 -> 1x1024x3072 bfloat16 | 24 | `atlas:smol_fusion` | 0.075 |
 | vision | `vlm_with_expert.vlm.model.vision_model.encoder.layers.*.mlp.fc2` | `linear.default` | 1x1024x3072, 768x3072 -> 1x1024x768 bfloat16 | 24 | `atlas:projection_gemm` | 115.964 |
+| vision | `vlm_with_expert.vlm.model.vision_model.encoder.layers.*.mlp.fc2` | `add.Tensor` bias | 1x1024x3072, 768x3072 -> 1x1024x768 bfloat16 | 24 | `host:atlas-mlir/runtime/smol_policy_raw.c` | 0.019 |
 | vision | `vlm_with_expert.vlm.model.vision_model.encoder.layers.*` | `add.Tensor` | 1x1024x768, 1x1024x768 -> 1x1024x768 bfloat16 | 24 | `host:merlin/examples/atlas/comparisons/smol_host_ops.c` | 0.019 |
 | vision | `vlm_with_expert.vlm.model.vision_model.post_layernorm` | `layer_norm.default` | 1x1024x768, 768 -> 1x1024x768 bfloat16 | 2 | `host:merlin/examples/atlas/comparisons/smol_vision_ops.c` | 0.008 |
 | vision | `vlm_with_expert.vlm.model.connector.modality_projection.proj` | `linear.default` | 1x64x12288, 960x12288 -> 1x64x960 bfloat16 | 2 | `atlas:projection_gemm` | 3.020 |
 | prefix | `(top)` | `mul.Tensor` | 1x64x960, scalar -> 1x64x960 bfloat16 | 2 | `host:merlin/examples/atlas/comparisons/smol_vision_graph.c` | 0.000 |
 | prefix | `(top)` | `mul.Tensor` | 1x48x960 -> 1x48x960 bfloat16 | 1 | `host:merlin/examples/atlas/comparisons/smol_policy_graph.c` | 0.000 |
 | prefix | `state_proj` | `linear.default` | 1x32, 960x32 -> 1x960 float32 | 1 | `atlas:projection_gemm` | 0.000 |
+| prefix | `state_proj` | `add.Tensor` bias | 1x32, 960x32 -> 1x960 float32 | 1 | `host:atlas-mlir/runtime/smol_policy_raw.c` | 0.000 |
 | prefix | `(top)` | `cumsum.default` | 1x177 -> 1x177 int64 | 2 | `host:merlin/examples/atlas/comparisons/smol_host_controls.c` | 0.000 |
 | prefix | `(top)` | `le.Tensor` | 1x1x177, 1x177x1 -> 1x177x177 bool | 1 | `host:merlin/examples/atlas/comparisons/smol_host_controls.c` | 0.000 |
 | prefix | `(top)` | `mul.Tensor` | 1x1x177, 1x177x1 -> 1x177x177 bool | 1 | `host:merlin/examples/atlas/comparisons/smol_host_controls.c` | 0.000 |
@@ -333,6 +362,7 @@ FLOPs: Atlas 600.240 GFLOP, host 0.409 GFLOP (99.9320% of runtime FLOPs on Atlas
 | prefix | `vlm_with_expert.vlm.model.text_model.norm` | `mul.Tensor` | 1x177x960, 1x177x1 -> 1x177x960 float32 | 1 | `host:merlin/examples/atlas/comparisons/smol_host_ops.c` | 0.000 |
 | prefix | `vlm_with_expert.vlm.model.text_model.norm` | `mul.Tensor` | 960, 1x177x960 -> 1x177x960 bfloat16 | 1 | `host:merlin/examples/atlas/comparisons/smol_host_ops.c` | 0.000 |
 | denoise | `action_in_proj` | `linear.default` | 1x50x32, 720x32 -> 1x50x720 float32 | 10 | `atlas:projection_gemm` | 0.023 |
+| denoise | `action_in_proj` | `add.Tensor` bias | 1x50x32, 720x32 -> 1x50x720 float32 | 10 | `host:atlas-mlir/runtime/smol_policy_raw.c` | 0.000 |
 | denoise | `(top)` | `pow.Scalar` | 360 -> 360 float64 | 10 | `build:merlin/examples/atlas/comparisons/smol_policy_graph.c` | 0.000 |
 | denoise | `(top)` | `mul.Tensor` | 360 -> 360 float64 | 40 | `build:merlin/examples/atlas/comparisons/smol_policy_graph.c` | 0.000 |
 | denoise | `(top)` | `reciprocal.default` | 360 -> 360 float64 | 10 | `build:merlin/examples/atlas/comparisons/smol_policy_graph.c` | 0.000 |
@@ -340,8 +370,10 @@ FLOPs: Atlas 600.240 GFLOP, host 0.409 GFLOP (99.9320% of runtime FLOPs on Atlas
 | denoise | `(top)` | `sin.default` | 1x360 -> 1x360 float64 | 10 | `build:merlin/examples/atlas/comparisons/smol_policy_graph.c` | 0.000 |
 | denoise | `(top)` | `cos.default` | 1x360 -> 1x360 float64 | 10 | `build:merlin/examples/atlas/comparisons/smol_policy_graph.c` | 0.000 |
 | denoise | `action_time_mlp_in` | `linear.default` | 1x50x1440, 720x1440 -> 1x50x720 float32 | 10 | `atlas:projection_gemm` | 1.037 |
+| denoise | `action_time_mlp_in` | `add.Tensor` bias | 1x50x1440, 720x1440 -> 1x50x720 float32 | 10 | `host:atlas-mlir/runtime/smol_policy_raw.c` | 0.000 |
 | denoise | `(top)` | `silu.default` | 1x50x720 -> 1x50x720 float32 | 10 | `host:merlin/examples/atlas/comparisons/smol_policy_ops.c` | 0.000 |
 | denoise | `action_time_mlp_out` | `linear.default` | 1x50x720, 720x720 -> 1x50x720 float32 | 10 | `atlas:projection_gemm` | 0.518 |
+| denoise | `action_time_mlp_out` | `add.Tensor` bias | 1x50x720, 720x720 -> 1x50x720 float32 | 10 | `host:atlas-mlir/runtime/smol_policy_raw.c` | 0.000 |
 | denoise | `(top)` | `cumsum.default` | 1x50 -> 1x50 float32 | 10 | `host:merlin/examples/atlas/comparisons/smol_host_controls.c` | 0.000 |
 | denoise | `(top)` | `le.Tensor` | 1x1x50, 1x50x1 -> 1x50x50 bool | 10 | `host:merlin/examples/atlas/comparisons/smol_host_controls.c` | 0.000 |
 | denoise | `(top)` | `mul.Tensor` | 1x1x50, 1x50x1 -> 1x50x50 bool | 10 | `host:merlin/examples/atlas/comparisons/smol_host_controls.c` | 0.000 |
@@ -416,6 +448,7 @@ FLOPs: Atlas 600.240 GFLOP, host 0.409 GFLOP (99.9320% of runtime FLOPs on Atlas
 | denoise | `vlm_with_expert.lm_expert.norm` | `mul.Tensor` | 1x50x720, 1x50x1 -> 1x50x720 float32 | 10 | `host:merlin/examples/atlas/comparisons/smol_host_ops.c` | 0.000 |
 | denoise | `vlm_with_expert.lm_expert.norm` | `mul.Tensor` | 720, 1x50x720 -> 1x50x720 bfloat16 | 10 | `host:merlin/examples/atlas/comparisons/smol_host_ops.c` | 0.000 |
 | denoise | `action_out_proj` | `linear.default` | 1x50x720, 32x720 -> 1x50x32 float32 | 10 | `atlas:projection_gemm` | 0.023 |
+| denoise | `action_out_proj` | `add.Tensor` bias | 1x50x720, 32x720 -> 1x50x32 float32 | 10 | `host:atlas-mlir/runtime/smol_policy_raw.c` | 0.000 |
 | denoise | `(top)` | `mul.Tensor` | 1x50x32 -> 1x50x32 float32 | 10 | `host:merlin/examples/atlas/comparisons/smol_host_ops.c` | 0.000 |
 | denoise | `(top)` | `add.Tensor` | 1x50x32, 1x50x32 -> 1x50x32 float32 | 10 | `host:merlin/examples/atlas/comparisons/smol_host_ops.c` | 0.000 |
 

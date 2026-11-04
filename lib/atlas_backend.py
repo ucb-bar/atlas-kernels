@@ -88,12 +88,42 @@ def _build_source(build):
         return None
     source = found.group(1).strip()
     record = dict(directory=source)
-    if not any(word in source.lower() for word in RESTRICTED) and (Path(source) / '.git').exists():
+    if any(word in source.lower() or word in str(Path(source).resolve()).lower() for word in RESTRICTED):
+        record['unavailable'] = 'restricted source path'
+        return record
+    if (Path(source) / '.git').exists():
         head = subprocess.run(['git', '-C', source, 'rev-parse', 'HEAD'], capture_output=True, text=True)
-        dirty = subprocess.run(['git', '-C', source, 'status', '--porcelain', '--untracked-files=no'],
-                               capture_output=True, text=True)
         if head.returncode == 0:
-            record.update(commit=head.stdout.strip(), modified=bool(dirty.stdout.strip()))
+            # Filter names before accessing working files, including through Git.
+            listing = subprocess.run(['git', '-C', source, 'ls-tree', '-rz', 'HEAD'],
+                                     capture_output=True, check=True).stdout
+            manifest, modified = hashlib.sha256(), False
+            for entry in listing.split(b'\0'):
+                if not entry:
+                    continue
+                metadata, raw_path = entry.split(b'\t', 1)
+                relative = os.fsdecode(raw_path)
+                if any(word in relative.lower() for word in RESTRICTED):
+                    continue
+                mode, kind, blob = metadata.split()
+                if kind != b'blob':
+                    continue
+                path = Path(source) / relative
+                if mode == b'120000' and path.is_symlink():
+                    contents = os.fsencode(os.readlink(path))
+                elif mode != b'120000' and not path.is_symlink() and not any(
+                        word in str(path.resolve()).lower() for word in RESTRICTED) and path.is_file():
+                    contents = path.read_bytes()
+                else:
+                    modified = True
+                    contents = b''
+                digest = hashlib.sha256(contents).hexdigest()
+                manifest.update(raw_path + b'\0' + digest.encode() + b'\n')
+                object_digest = hashlib.sha1(b'blob ' + str(len(contents)).encode() + b'\0' + contents).hexdigest()
+                modified |= object_digest != blob.decode()
+            record.update(commit=head.stdout.strip(), modified=modified,
+                          tracked_source_sha256=manifest.hexdigest(),
+                          provenance='observed CMake source checkout; binary digests identify the build')
     return record
 
 
@@ -142,10 +172,12 @@ class Compiled:
 _cache = {}
 
 
-def compile(program_text, *, verify=True, bin_dir=None, name='kernel.S'):
+def compile(program_text, *, verify=True, bin_dir=None, name='kernel.S', min_tier='stream-verified'):
     """Translate, verify (unless ``verify`` is false), and encode one program; returns a Compiled record."""
+    if min_tier not in TIERS:
+        raise BackendError(f'unknown minimum tier: {min_tier}')
     found = tools(bin_dir)
-    key = (hashlib.sha256(program_text.encode()).hexdigest(), verify, found)
+    key = (hashlib.sha256(program_text.encode()).hexdigest(), verify, found, min_tier)
     if key in _cache:
         return _cache[key]
     try:
@@ -178,6 +210,9 @@ def compile(program_text, *, verify=True, bin_dir=None, name='kernel.S'):
         timing_diagnostics = () if timing == 'pass' else _diagnostics(done['timing'][2])
     tier = 'encode-only' if stream != 'pass' else ('verified' if timing == 'pass' else 'stream-verified')
     result = Compiled(words, tier, stream, stream_diagnostics, timing, timing_diagnostics, mlir)
+    if TIERS.index(tier) > TIERS.index(min_tier):
+        raise BackendError(f'program tier {tier} is below required {min_tier}: ' +
+                           '; '.join(stream_diagnostics + timing_diagnostics))
     _cache[key] = result
     return result
 
@@ -201,7 +236,7 @@ def rule(diagnostic):
 
 
 class Session:
-    """Cross-checks every assembly in this process (and forked children) and spools one record per program."""
+    """Cross-checks assembly in the wrapped process (including inherited hooks after fork) and spools one record per program."""
 
     def __init__(self, backend, spool, *, verify=True, bin_dir=None):
         if backend not in BACKENDS:
@@ -220,7 +255,7 @@ class Session:
         record = dict(source_sha256=digest, assembler_words=len(words),
                       assembler_words_sha256=hashlib.sha256(b''.join(w.to_bytes(4, 'little') for w in words)).hexdigest())
         if self.backend == 'atlas-mlir':
-            compiled = cross_checked(text, words, verify=self.verify, bin_dir=self.bin_dir)
+            compiled = cross_checked(text, words, verify=self.verify, bin_dir=self.bin_dir, min_tier='encode-only')
             record.update(compiled.record(), words_equal_assembler=True)
         else:
             record.update(tier='assembler')
@@ -343,7 +378,19 @@ def _run(args):
         import traceback
         traceback.print_exc()
     programs = session.programs()
-    data.update(finished=time.time(), exit_code=code, error=error, npu_model=_npu_model_identity(),
+    policy_errors = []
+    if len(programs) < args.expect_min_programs:
+        policy_errors.append(f'encoded {len(programs)} distinct programs; expected at least {args.expect_min_programs}')
+    if args.backend == 'atlas-mlir':
+        rejected = Counter(p['tier'] for p in programs if TIERS.index(p['tier']) > TIERS.index(args.min_tier))
+        if rejected:
+            policy_errors.append(f'programs below required {args.min_tier}: {dict(rejected)}')
+    if policy_errors:
+        code = code or 1
+        error = '; '.join(([error] if error else []) + policy_errors)
+        print(f'atlas_backend: {error}', file=sys.stderr)
+    data.update(expect_min_programs=args.expect_min_programs, min_tier=args.min_tier,
+                policy_errors=policy_errors, finished=time.time(), exit_code=code, error=error, npu_model=_npu_model_identity(),
                 summary=summarize(programs), programs=programs)
     receipt.write_text(json.dumps(data, indent=1) + '\n')
     spool.unlink(missing_ok=True)
@@ -354,12 +401,12 @@ def _run(args):
 
 def _compile(args):
     text = Path(args.program).read_text()
-    result = compile(text, verify=not args.no_verify, bin_dir=args.atlas_mlir_bin, name=Path(args.program).name)
-    record = dict(program=args.program, **result.record())
+    result = compile(text, verify=not args.no_verify, bin_dir=args.atlas_mlir_bin, name=Path(args.program).name, min_tier=args.min_tier)
+    record = dict(program=args.program, tools=tools(args.atlas_mlir_bin).identity(), **result.record())
     if args.check_assembler:
         from npu_model.util.converter import input_to_program
         cross_checked(text, input_to_program(io.StringIO(text)).assemble(), verify=not args.no_verify,
-                      bin_dir=args.atlas_mlir_bin)
+                      bin_dir=args.atlas_mlir_bin, min_tier=args.min_tier)
         record['words_equal_assembler'] = True
     if args.output:
         Path(args.output).write_bytes(result.binary())
@@ -377,16 +424,25 @@ def main(argv=None):
     run.add_argument('--receipt', required=True)
     run.add_argument('--atlas-mlir-bin', help='atlas-mlir build bin directory holding atlas-opt and atlas-emit')
     run.add_argument('--no-verify', action='store_true', help='encode only: skip both verifiers')
+    run.add_argument('--expect-min-programs', type=int, default=1, metavar='N',
+                     help='require at least N distinct program texts (default: 1)')
+    run.add_argument('--min-tier', choices=TIERS, default='stream-verified',
+                     help='minimum accepted compiler tier (default: stream-verified)')
     run.add_argument('script')
     run.add_argument('arguments', nargs=argparse.REMAINDER)
     one = sub.add_parser('compile', help='translate, verify, and encode one assembly file')
     one.add_argument('program')
     one.add_argument('--atlas-mlir-bin')
     one.add_argument('--no-verify', action='store_true')
+    one.add_argument('--min-tier', choices=TIERS, default='stream-verified')
     one.add_argument('--check-assembler', action='store_true', help="also require npu_model's assembler words")
     one.add_argument('-o', '--output', help='write the little-endian program binary here')
     one.add_argument('--mlir', help='write the machine-IR module here')
     args = parser.parse_args(argv)
+    if args.command == 'run' and args.expect_min_programs < 1:
+        parser.error('--expect-min-programs must be at least 1')
+    if args.no_verify and args.min_tier != 'encode-only' and (args.command == 'compile' or args.backend == 'atlas-mlir'):
+        parser.error('--no-verify requires --min-tier encode-only')
     if args.command == 'run' and args.arguments[:1] == ['--']:
         args.arguments = args.arguments[1:]
     return _run(args) if args.command == 'run' else _compile(args)

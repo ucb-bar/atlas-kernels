@@ -6,11 +6,11 @@ Which Atlas kernels each focus model uses, derived from the real PyTorch model r
 
 | File | Role |
 | --- | --- |
-| `export_ops.py` | Runs `torch.export.export(strict=False)` on one complete inference and writes `fixture/<model>.json` (aggregated op rows with module path, source line, phase, shapes, dtypes, FLOPs, counts, and the ordered projection and attention call indices) and, under the ignored `out/`, the full node list and graph text. |
+| `export_ops.py` | Runs `torch.export.export(strict=False)` on one complete inference and writes `fixture/<model>.json` (aggregated op rows with module path, source line, phase, shapes, dtypes, FLOPs, bias component FLOPs, counts, and the ordered projection and attention call indices) and, under the ignored `out/`, the full node list and graph text. A new model can supply `--loader FILE`. |
 | `fixture/*.json` | The committed aggregated rows, read by `build_table.py`, its tests, and the atlas-mlir coverage test. |
-| `mapping.yaml` | First-match rules that place every fixture row: `atlas:<family>` (a `kernels/<family>/` directory, the family names of the atlas-kernels kernel manifests), `host:<file>`, or `build:<file>`, each with citations. |
-| `build_table.py` | Applies the rules and fails on any unmapped row, unused rule, or device-work count that differs from the qualified builds; writes this file and `coverage.json`. `--check-cites ATLAS_MLIR MERLIN ATLAS_KERNELS` also requires every cited file to exist and every family to have a `kernels/<family>/kernel.yaml` manifest of that name. |
-| `tests/` | Checks that this file regenerates exactly, that every rule is needed, and that device work matches the builds. |
+| `mapping.yaml` | First-match rules that place every fixture row: `atlas:<family>` (a `kernels/<family>/` directory, the family names of the atlas-kernels kernel manifests), `host:<file>`, or `build:<file>`, each with citations. A biased Linear or Conv2d uses `bias_where` for its addition component. |
+| `build_table.py` | Applies the rules and fails on any unmapped row, unused rule, or missing or incorrect mandatory device-work category; writes this file and `coverage.json`. `--check-cites ATLAS_MLIR MERLIN ATLAS_KERNELS` also requires every cited file to exist and every family to have a `kernels/<family>/kernel.yaml` manifest of that name. `--inventory MODEL=JSON` selects a new inventory; `--allow-unmapped` writes an explicitly INCOMPLETE report without bypassing other gates. |
+| `tests/` | Checks exact regeneration, rule coverage, every mandatory launch category including missing-category mutations, complete bias placement, and unmapped-report behavior. |
 
 ## How mapping.yaml relates to Merlin's selection.yaml
 
@@ -37,11 +37,27 @@ python3 coverage/build_table.py
 
 ## Adding a model
 
-Add a loader to `export_ops.py` that builds the model and its exact captured input, export it, add `rules.<model>` and `builds.<model>` to `mapping.yaml` and the model to `MODELS` in `build_table.py`, and rerun until no row is unmapped. Rows that need a kernel the library lacks are that model's kernel work list. Gemma2 (GM) and pi0 have placeholder columns.
+Write a Python loader exposing `get_model_and_inputs()`, which returns `(torch.nn.Module, tuple_of_positional_inputs)`. It must construct the model and exact captured inputs without network access. The exporter records the loader's SHA-256, exports in eval mode with gradients disabled, and assigns a single `inference` phase; custom cache or denoising phase semantics need an adapter like the focus-model loaders. Loader imports do not write bytecode alongside the source. This adapter exports shapes and operations; it does not capture real values or generate a host graph.
+
+Merlin's `examples/workloads/causal_decoder/loader.py` is a deterministic small example with an 8-token input and no checkpoint dependency. Run these commands from the atlas-kernels root, with `MERLIN_ROOT` set to the Merlin checkout and `TORCH_PYTHON` set to a Python interpreter with torch and NumPy:
+
+```sh
+"$TORCH_PYTHON" -B coverage/export_ops.py causal_decoder \
+  --loader "$MERLIN_ROOT/examples/workloads/causal_decoder/loader.py" \
+  --out "$OUT/causal_decoder/export" --fixture "$OUT/causal_decoder/fixture.json"
+python3 -B coverage/build_table.py --inventory "causal_decoder=$OUT/causal_decoder/fixture.json" \
+  --allow-unmapped --out "$OUT/causal_decoder/report"
+```
+
+The committed small report is [examples/causal_decoder/REPORT.md](examples/causal_decoder/REPORT.md). One command regenerates it and retains the full export and placement artifacts under `$OUT`: `python3 -B coverage/examples/causal_decoder/regenerate.py --out "$OUT"` (with `MERLIN_ROOT` and `TORCH_PYTHON` set as above). The driver Python needs PyYAML.
+
+The report is INCOMPLETE: no causal_decoder placement rules or qualified build are registered, and every exported row appears in the unmapped work list with phase, module, source, op, shape, count, and FLOPs. The JSON retains each complete unmapped record. Omitting `--allow-unmapped` exits nonzero and writes no report. This is a demonstrated inventory and unsupported-op report, not demonstrated model execution on Atlas. The same loader contract accepts other models, but Gemma2 (GM) and pi0 remain extension work.
+
+To implement placement, add `rules.<model>` and `builds.<model>` to `mapping.yaml`, register a display column in `MODELS` if desired, and pass `--inventory MODEL=JSON` until no row is unmapped. Add explicit mandatory launch counts in `REQUIRED_LAUNCHES` when the model has a qualified build. A row that needs an absent kernel or host implementation is an implementation work item. Rules must place a biased projection's `bias_where` component separately; that addition does not create a second projection call.
 
 ## Limits
 
-Placement follows the qualified builds, which place every op identically in default and fast; a build that moves an op needs a rule restricted to its phase or shape. Rules match model source lines and shapes of the pinned library versions, so a new Transformers or LeRobot version needs its rules rechecked. FLOPs count multiply-adds twice and other arithmetic once per element, so they rank work rather than time it. Zero-FLOP rows (views, casts, and index construction) are placed with the code that performs that layout. The export runs on fake tensors, so it checks shapes and structure, not numerics.
+Placement follows the qualified builds, which place every op identically in default and fast; a build that moves an op needs a rule restricted to its phase or shape. Rules match model source lines and shapes of the pinned library versions, so a new Transformers or LeRobot version needs its rules rechecked. FLOPs count multiply-adds twice and other arithmetic once per element, so they rank work rather than time it. Linear and Conv2d totals include one bias addition per output element when a bias tensor exists; placement splits those additions from the GEMM component. SmolVLA has 172,539,136 bias additions: 75,497,472 in the fused vision fc1 post-pass and 97,041,664 on the host. The split preserves export node counts and projection invocation counts. Zero-FLOP rows (views, casts, and index construction) are placed with the code that performs that layout. The export runs on fake tensors, so it checks shapes and structure, not numerics.
 
 ## Coverage
 

@@ -3,7 +3,7 @@
  "model": "tinyllama",
  "method": "torch.export.export(strict=False)",
  "method_reason": "Non-strict export traces the Python inference loop (cache objects, greedy feedback, denoising steps) with fake tensors; strict TorchDynamo export was not needed.",
- "environment": {"python": "3.10.14", "torch": "2.10.0+cu128", "transformers": "5.4.0", "numpy": "1.26.4"},
+ "environment": {"python": "3.10.14", "torch": "2.10.0+cu128", "numpy": "1.26.4", "transformers": "5.4.0"},
  "sources": {"model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0", "revision": "fe8a4ea1ffedaf415f4da2f062534de366a451e6", "weights": {"file": "model.safetensors", "sha256": "6e6001da2106d4757498752a021df6c2bdc332c650aae4bae6b0c004dcf14933", "bytes": 2200119864}, "modeling_llama": {"file": "modeling_llama.py", "sha256": "46d313ec0f1116bcc1bb7f2379467ab249c140415c64fb758e2d5915cd8b89a5", "bytes": 21153}, "corpus": {"file": "session.txt", "sha256": "573e1d244efc95bd7bb4ee3df0735bfdd688d3abf7f70a849ac2061c6de8a4d9", "bytes": 8700}},
  "trace": {"prefill_rows": 128, "decode_count": 2, "native_greedy_tokens": [278, 3711, 5652]},
  "node_count": 4540,

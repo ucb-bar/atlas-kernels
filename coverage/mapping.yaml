@@ -122,8 +122,14 @@ rules:
 
   smolvla:
     # Projections: every Linear and the patch Conv2d (bias added on the host except fused fc1).
+    - match: {op: aten.linear.default, module: vlm_with_expert.vlm.model.vision_model.encoder.layers.*.mlp.fc1}
+      where: atlas:projection_gemm
+      bias_where: atlas:smol_fusion
+      note: one projection call; its bias component runs in the fc1-bias-gelu-fp8 post-pass
+      cite: [atlas-kernels:kernels/projection_gemm/atlas_program.py, atlas-kernels:kernels/smol_fusion/smol_fusion_fp8.py, *smol_plan, 'merlin:examples/atlas/comparisons/smol_vision_graph.c:89-94']
     - match: {op: [aten.linear.default, aten.conv2d.*]}
       where: atlas:projection_gemm
+      bias_where: host:atlas-mlir/runtime/smol_policy_raw.c
       note: bias added on the host in the panel unload except vision fc1
       cite: [atlas-kernels:kernels/projection_gemm/atlas_program.py, *smol_plan, 'atlas-mlir:runtime/smol_policy_raw.c:42-48,233-247']
     # Vision tower.

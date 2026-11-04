@@ -1,5 +1,6 @@
 {
  "schema": "atlas.coverage.summary.v1",
+ "status": "COMPLETE",
  "models": {
   "tinyllama": {
    "inventory_nodes": 4540,
@@ -16,6 +17,8 @@
     "attention": 66,
     "rmsnorm": 132
    },
+   "status": "COMPLETE",
+   "unmapped": [],
    "flops": {
     "host": 1342089,
     "build": 74886,
@@ -84,12 +87,14 @@
     "attention": 200,
     "smol_fusion_calls": 24
    },
+   "status": "COMPLETE",
+   "unmapped": [],
    "flops": {
-    "host": 408646130,
+    "host": 505687794,
     "build": 5939984,
-    "atlas": 600239976720
+    "atlas": 600315474192
    },
-   "atlas_share_of_runtime_flops": 0.9993196585916387,
+   "atlas_share_of_runtime_flops": 0.9991583389101535,
    "by_where": {
     "atlas:attention": {
      "ops": 3736,
@@ -100,8 +105,8 @@
      "flops": 512992512000
     },
     "atlas:smol_fusion": {
-     "ops": 24,
-     "flops": 75497472
+     "ops": 48,
+     "flops": 150994944
     },
     "build:atlas-kernels/kernels/attention/atlas_attention_v2_program.py": {
      "ops": 20,
@@ -118,6 +123,10 @@
     "build:merlin/examples/atlas/comparisons/smol_vision_graph.c": {
      "ops": 56,
      "flops": 128
+    },
+    "host:atlas-mlir/runtime/smol_policy_raw.c": {
+     "ops": 163,
+     "flops": 97041664
     },
     "host:merlin/examples/atlas/comparisons/smol_host_controls.c": {
      "ops": 240,
