@@ -14,10 +14,30 @@ from atlas_epilogue import Epilogue  # noqa: E402
 from atlas_rope_postpass import ResidentRopeEpilogue, append_postpass  # noqa: E402
 
 args = parser(__doc__)
-args.add_argument("--shape", type=shape, default=(128, 2048, 2048), help="q (N 2048) or k (N 256); M 32 or 128")
+shapes = args.add_mutually_exclusive_group()
+shapes.add_argument("--shape", type=shape, help="projection MxKxN; default 128x2048x2048")
+shapes.add_argument("--postpass-shape", type=shape, help="opt-in standalone BF16 physical MxN, head64")
 args.add_argument("--rescale-exponent", type=int, default=0, help="projection output scale 2**E")
-args = args.parse_args()
-m, k, n = args.shape
+parsed = args.parse_args()
+if parsed.postpass_shape is not None:
+    if len(parsed.postpass_shape) != 2:
+        args.error('--postpass-shape requires physical MxN')
+    if parsed.rescale_exponent != 0:
+        args.error('--rescale-exponent must be 0 for standalone BF16 RoPE')
+    from atlas_rope_standalone import assembly, layout
+    m, n = parsed.postpass_shape
+    try:
+        metadata = layout(m, n)
+        source = assembly(m, n)
+    except ValueError as error:
+        args.error(str(error))
+    write(parsed, f"rope-postpass-{m}x{n}", source,
+          dict(metadata, family="rope", variant="standalone-bf16-postpass"))
+    sys.exit(0)
+if parsed.shape is not None and len(parsed.shape) != 3:
+    args.error('--shape requires projection MxKxN')
+args = parsed
+m, k, n = (128, 2048, 2048) if args.shape is None else args.shape
 offset = m * k + k * n + 256
 common = dict(m=m, n=n, output_offset=offset, scratch_registers=(10, 11))
 extra = offset + Epilogue(**common).output_bytes + 256

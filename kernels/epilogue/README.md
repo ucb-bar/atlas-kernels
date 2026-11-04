@@ -2,7 +2,7 @@
 
 Ordered BF16 tile epilogues fused into a projection's output store. An `Epilogue` runs after each output tile is popped from MXU0 and before it is stored, so element-wise work that follows a GEMM costs no extra launch or DRAM round trip.
 
-Stage: fused into a projection_gemm launch (no launch of its own).
+Stage: the default epilogue API is fused into a projection_gemm launch; the opt-in contiguous SiLU times up stream below is a separate standalone launch.
 
 ## Entry points
 
@@ -37,3 +37,15 @@ make gen-epilogue NPU_MODEL=/path/to/npu-model ARGS="--shape 128x2048x2048 --ste
 Run `make test-lib test-projection_gemm test-coverage NPU_MODEL=/path/to/npu-model` from the repository root. See [shared test coverage](../../README.md#running-the-tests).
 
 `checked_assembly` (`lib/atlas_program_checks.py`) admits a hook only when the recipe names none of the registers it writes; `kernels/projection_gemm/tests/test_program_checks.py` and `test_program_legacy_epilogue.py` cover every recipe with hooks. In atlas-mlir, `test/test_tiny_fusion.py` and the Smol fusion tests check staged layouts, and the capture flows execute every fused launch on npu_model `47b8599`.
+
+## Opt-in contiguous SiLU times up stream
+
+`atlas_swiglu_stream.assembly(elements, dram_base=0x90000000)` is a separate standalone launch. It reuses `Step("silu")` and `Step("mul", TileInput(...))` without changing their arithmetic. `layout(elements)` returns the padded element count, input and output byte offsets, four 256-byte guards, and arena extent. Both gate and up must be finite BF16 buffers in the same contiguous lane order. Because every arithmetic operation is elementwise, their common lane permutation cancels at output, and no 2D layout conversion is required. Zero pad only the last 1024-element chunk of both inputs and discard the output tail. VMEM is fixed at 4096 bytes: 2048 bytes for gate and 2048 shared by up and output.
+
+```sh
+make gen-epilogue NPU_MODEL=/path/to/npu-model ARGS="--swiglu-elements 453120"
+```
+
+This mode writes BF16 output and rejects projection steps, FP8 output, projection rescaling, and output-layout options. `--shape` is mutually exclusive with `--swiglu-elements`; projection mode still requires `--shape` and `--steps` and keeps its existing program words. No default placement or selection rule enables the stream.
+
+The native SiLU policy uses the existing approximate RTL EXP and reciprocal lookup tables, a truncating denominator addition, and BF16 RNE multiplications. It is not exact host SiLU and does not establish a model-level action verdict. A model must pass its independent full-action rule before enabling this primitive. `tests/test_swiglu_stream.py` checks original47 instruction execution against an independent NumPy table and rounding oracle, including tails, complete arenas, guards, DMA counts, and address admission. Run `make test-epilogue NPU_MODEL=/path/to/npu-model`.
