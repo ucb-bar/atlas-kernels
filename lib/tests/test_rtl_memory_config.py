@@ -57,7 +57,7 @@ class DerivationTest(unittest.TestCase):
     def test_restricted_and_symlink_roots_are_rejected_before_git(self):
         with patch.object(memory.subprocess, 'check_output') as git:
             with self.assertRaisesRegex(ValueError, 'restricted path'):
-                memory.inspect_model('/tmp/forbidden-HaMmEr/model')
+                memory.inspect_model('/path/to/forbidden-HaMmEr/model')
             with tempfile.TemporaryDirectory() as directory:
                 link = Path(directory) / 'model'
                 link.symlink_to(directory, target_is_directory=True)

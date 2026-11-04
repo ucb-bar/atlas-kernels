@@ -127,6 +127,13 @@ class AttentionHaltModelTests(unittest.TestCase):
                 self.assertEqual(results[1][1]["numerics"], "rtl")
                 self.assertTrue(results[1][1]["preserved"])
 
+    def test_cli_rejects_halt_variant_for_wide_heads(self):
+        command = [sys.executable, str(ROOT / "kernels/attention/gen.py"), "--rows", "1", "--keys", "1",
+                   "--heads", "2/1", "--head-dim", "128", "--variant", "v2-no-halt-delay", "--out", "."]
+        result = subprocess.run(command, capture_output=True, text=True, timeout=60)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("v2-no-halt-delay requires --head-dim 64", result.stderr)
+
     def test_cli_default_and_explicit_selection(self):
         with tempfile.TemporaryDirectory() as temporary:
             outputs = []

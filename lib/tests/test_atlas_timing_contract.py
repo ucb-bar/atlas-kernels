@@ -98,7 +98,7 @@ class ContractTest(unittest.TestCase):
                       contracts.validate(self.contract).annotate('module {\n}\n'))
 
     def test_path_checks_before_reads(self):
-        for path in ('../input.bin', '/tmp/ha' + 'mmer/input.bin', '/tmp/vl' + 'si/input.bin'):
+        for path in ('../input.bin', '/path/to/ha' + 'mmer/input.bin', '/path/to/vl' + 'si/input.bin'):
             with self.subTest(path=path):
                 self.contract['image']['path'] = path
                 with self.assertRaises(contracts.ContractError):

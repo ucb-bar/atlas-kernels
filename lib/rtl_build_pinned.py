@@ -86,7 +86,10 @@ def main():
     RTL = safe(args.rtl_root)
     if OUT.exists() and (not args.resume):
         parser.error('output exists; use --resume explicitly')
-    if shutil.disk_usage('/tmp').free < 20 * 1024 ** 3:
+    space_root = OUT
+    while not space_root.exists():
+        space_root = space_root.parent
+    if shutil.disk_usage(safe(space_root)).free < 20 * 1024 ** 3:
         raise RuntimeError('below 20 GiB free')
     safe(OUT).mkdir(parents=True, exist_ok=True)
     script_snapshot = safe(OUT / 'build-script-executed.py')
