@@ -2,7 +2,7 @@
 
 Regenerate: `MERLIN_ROOT=/path/to/merlin EXPORT_PYTHON=/path/to/export/bin/python MODEL_PYTHON=/path/to/model/bin/python NPU_MODEL=/path/to/npu-model python3 -B coverage/examples/causal_decoder/bench.py --atlas-mlir-bin /path/to/atlas-mlir/build/bin --min-tier stream-verified --out "$OUT"`
 
-Input: `table/coverage.json` (SHA-256 `a9c5d9b7ec6e14718e171f6cb7c18201329b698bc60fa7adf762aa0b4a57371e`), coverage status INCOMPLETE. The coverage derives 7 distinct launches; 2 executed on npu_model `47b8599d8ffbe5ddd96059ffe2b5be2427a410f5` with numerics="rtl" on seeded synthetic inputs at the model's shape (32 worker processes; 14 job-seconds in all, longest job 4 s).
+Input: `table/coverage.json` (SHA-256 `a9c5d9b7ec6e14718e171f6cb7c18201329b698bc60fa7adf762aa0b4a57371e`), coverage status INCOMPLETE. The coverage derives 7 distinct launches; 3 executed on npu_model `47b8599d8ffbe5ddd96059ffe2b5be2427a410f5` with numerics="rtl" on seeded synthetic inputs at the model's shape (4 worker processes; 18 job-seconds in all, longest job 4 s).
 
 Model cycles are npu_model Core cycle-model counts, not RTL cycles. Cycles x count multiplies one launch by the number of launches in the model; the sums below are device-only estimates that ignore host time, launch overhead, and data movement between launches. Bit-exact compares output bytes with the independent lib/golden reference where the family has one; cosine and rel-err compare the decoded output with an FP32 PyTorch reference on the unquantized inputs, so they include FP8 input quantization. Inputs are synthetic, so fidelity and data-dependent cycles are representative, not the model's.
 
@@ -19,30 +19,30 @@ Compiler backend: machine IR, atlas-opt stream and timing verifiers, and atlas-e
 
 ## Summary
 
-Device cycle estimate (sum of model cycles x count over 2 of 8 launches): 17,617 npu_model model cycles. It ignores host time and launch overhead.
+Device cycle estimate (sum of model cycles x count over 4 of 8 launches): 125,989 npu_model model cycles. It ignores host time and launch overhead.
 
 These totals include historically reused functional and timed results; zero functional or timed bench jobs were rerun for this retained report. Reconstructed staging, program-word checks, and per-job result hashes are recorded in `reuse-proof.json` beside the generated JSON.
 
-Compiler tier counts by distinct launch: 2 `verified`.
+Compiler tier counts by distinct launch: 3 `verified`.
 
 | launch kind | launches | launches with cycles | model cycles x count | share |
 | --- | ---: | ---: | ---: | ---: |
-| `projection_gemm` | 2 | 2 | 17,617 | 100.00% |
+| `rmsnorm` | 2 | 2 | 108,372 | 86.02% |
+| `projection_gemm` | 2 | 2 | 17,617 | 13.98% |
 | `epilogue` | 2 | 0 | 0 | 0.00% |
-| `rmsnorm` | 2 | 0 | 0 | 0.00% |
 | `rne_add` | 2 | 0 | 0 | 0.00% |
 
 Top shapes by total cycles:
 
 | family | shape | count | model cycles | cycles x count |
 | --- | --- | ---: | ---: | ---: |
+| `rmsnorm` | 32x32 (8 rows) | 2 | 54,186 | 108,372 |
 | `projection_gemm` | 32x32x96 (logical 8x32x96) | 1 | 10,559 | 10,559 |
 | `projection_gemm` | 32x32x64 (logical 8x32x64) | 1 | 7,058 | 7,058 |
 
-Unsupported or failed launches: 5.
+Unsupported or failed launches: 4.
 - `epilogue` 32x32x64 (logical 8x32x64) mul FP8 out x1: no-variant: kernels/epilogue/gen.py --shape 32x32x64 --steps mul --fp8 --rescale-exponent -19 --output-scale-exponent -9 --output-row-stride 2048: ValueError: traffic reuse is supported only for the qualified shapes
 - `epilogue` 32x32x64 (logical 8x32x64) silu x1: no-variant: kernels/epilogue/gen.py --shape 32x32x64 --steps silu --rescale-exponent -19: ValueError: traffic reuse is supported only for the qualified shapes
-- `rmsnorm` 32x32 (8 rows) x2: no-variant: kernels/rmsnorm/gen.py --rows 32 --width 32 --norm-scale-exponent -7: gen.py: error: argument --width: invalid choice: '32' (choose from '2048')
 - `rne_add` 32x32x32 (logical 8x32x32) x1: no-variant: kernels/epilogue/gen.py --shape 32x32x32 --steps add_rne --rescale-exponent -19: ValueError: traffic reuse is supported only for the qualified shapes
 - `rne_add` 32x64x32 (logical 8x64x32) x1: no-variant: kernels/epilogue/gen.py --shape 32x64x32 --steps add_rne --rescale-exponent -19: ValueError: traffic reuse is supported only for the qualified shapes
 
@@ -54,7 +54,7 @@ Unsupported or failed launches: 5.
 | `epilogue` | 32x32x64 (logical 8x32x64) silu | float32 | no-variant | n/a | | 1 | | | | | | | | `gate` |
 | `projection_gemm` | 32x32x64 (logical 8x32x64) | float32 | default schedule (no traffic-reuse recipe for this shape) | verified | 74 | 1 | 7,058 | 7,058 | ordered_matmul | exact | exact | 0.99924 | 3.912% | `head` |
 | `projection_gemm` | 32x32x96 (logical 8x32x96) | float32 | default schedule (no traffic-reuse recipe for this shape) | verified | 74 | 1 | 10,559 | 10,559 | ordered_matmul | exact | exact | 0.99935 | 3.608% | `qkv` |
-| `rmsnorm` | 32x32 (8 rows) | float32 | no-variant | n/a | | 2 | | | | | | | | `norm` |
+| `rmsnorm` | 32x32 (8 rows) | float32 | standalone norm launch (DMA BF16 rows, RMS post-pass, FP8 out) | verified | 148 | 2 | 54,186 | 108,372 | none | n/a | exact | 0.99968 | 2.517% | `norm` |
 | `rne_add` | 32x32x32 (logical 8x32x32) | float32 | no-variant | n/a | | 1 | | | | | | | | `projection` |
 | `rne_add` | 32x64x32 (logical 8x64x32) | float32 | no-variant | n/a | | 1 | | | | | | | | `down` |
 
@@ -83,6 +83,4 @@ Unsupported or failed launches: 5.
 
 ## Notes
 
-Placement comes from `coverage/examples/causal_decoder/mapping.yaml`, which maps only ops an existing family computes and cites why; the attention core stays unmapped because attention v2 requires head dimension 64 and this decoder uses 8. The export is `export_ops.py causal_decoder --loader merlin:examples/workloads/causal_decoder/loader.py`, the same command as `coverage/examples/causal_decoder/REPORT.md`, which lists the decoder with no placement rules.
-
-Functional and timed results are reused from Track G only after regenerating each job with the pinned Track G staging code and this bench, proving equal program-word and staged-arena SHA-256 digests, and passing the compiler word check; the per-job proof is in `reuse-proof.json` beside the generated JSON. No functional or timed job changed, including the row-subset estimate.
+Placement comes from `coverage/examples/causal_decoder/mapping.yaml`, which maps only ops an existing family computes and cites why; the attention core stays unmapped because this decoder uses head dimension 8, while the family supports 64, 128, and 256. The export is `export_ops.py causal_decoder --loader merlin:examples/workloads/causal_decoder/loader.py`, the same command as `coverage/examples/causal_decoder/REPORT.md`, which lists the decoder with no placement rules.

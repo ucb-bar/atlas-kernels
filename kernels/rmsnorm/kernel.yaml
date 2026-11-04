@@ -6,6 +6,9 @@ family: rmsnorm
 summary: "RMSNorm (and LayerNorm) over retained BF16 rows, gamma-scaled, FP8 E4M3 output for the next projection"
 stage: post-pass; TinyLlama runs it as a standalone launch that DMAs h into VMEM banks 2 and 3
 entry_points:
+  - module: atlas_rmsnorm_tiled
+    function: standalone_source
+    parameters: "rows, width, mask_offset, weight_offset, scale=-8; streamed tile rows for new widths"
   - module: atlas_norm_postpass
     function: ResidentNormEpilogue
     parameters: "Epilogue fields plus norm_kind, real_n, norm_mask_offset, norm_weight_offset, norm_bias_offset, norm_scale_exponent"
@@ -21,18 +24,18 @@ dtypes:
   gamma: bf16
   output: fp8_e4m3
 constraints:
-  width: 2048 (the original path); other widths with real_n and zero padding
+  width: "positive multiples of 32 through 7136; pinned resident path for 960 and 2048; streamed standalone path otherwise"
   rows: 128 (prefill) or 32 (one decode row padded)
 select:
   - op: LlamaRMSNorm
     dtype: "bf16 -> fp8_e4m3"
-    shape: "rows in {1 (padded to 32), 128}, width 2048"
-    variant: "ResidentNormEpilogue(norm_kind=\"rms\")"
+    shape: "rows in {1 (padded to 32), 128}, physical width in 32..7136 by 32"
+    variant: "gen.py selects the pinned resident or streamed standalone path"
 models:
   - model: tinyllama
     use: "input_layernorm and post_attention_layernorm, 132 launches in the default build"
     shapes: [128x2048, 32x2048]
-generator: "make gen-rmsnorm ARGS=\"--rows 128|32\""
-tests: [tests/test_norm_postpass.py]
+generator: "make gen-rmsnorm ARGS=\"--rows 128|32 --width WIDTH\""
+tests: [tests/test_norm_postpass.py, tests/test_rmsnorm_tiled.py]
 checks: [register hygiene test, every TinyLlama norm launch executed on npu_model 47b8599 numerics=rtl in atlas-mlir export]
 run_tests: "make test-rmsnorm NPU_MODEL=<npu_model 47b8599 checkout>"

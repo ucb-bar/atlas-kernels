@@ -6,8 +6,8 @@
 # Rule fields are documented at the top of coverage/mapping.yaml. Citations name atlas-kernels files (this repository).
 #
 # Left unmapped on purpose:
-# - the attention core (QK^T, divide by sqrt(8), mask add, softmax, PV): attention v2 requires head dimension 64
-#   (atlas-kernels: kernels/attention/atlas_attention_v2_program.py:31-32) and this decoder has 4 heads of dimension 8;
+# - the attention core (QK^T, divide by sqrt(8), mask add, softmax, PV): the family supports dimensions 64, 128, and 256
+#   (atlas-kernels: kernels/attention/gen.py) and this decoder has 4 heads of dimension 8;
 # - embedding, chunk, reshape, and transpose: data movement with no kernel family here; a host graph would do it.
 
 schema: atlas.coverage.mapping.v1
@@ -36,8 +36,8 @@ rules:
       launch: {family: rmsnorm, per: {op: aten.rms_norm.default}}
       note: >-
         torch.nn.RMSNorm with a weight is the kernel's x * rsqrt(mean(x^2) + eps) * gamma (kernels/rmsnorm/reference.py);
-        the kernel uses eps 1e-5 where torch.nn.RMSNorm(eps=None) uses the float32 machine epsilon, and its generator
-        only emits width 2048, so this width-32 norm reports no-variant
+        the kernel uses eps 1e-5 where torch.nn.RMSNorm(eps=None) uses the float32 machine epsilon, and the streamed
+        standalone generator supports this width-32 norm with physical rows padded to 32
       cite: [atlas-kernels:kernels/rmsnorm/reference.py, atlas-kernels:kernels/rmsnorm/gen.py]
     - match: {op: aten.silu.default, source: 'loader.py:forward:30'}
       where: atlas:epilogue

@@ -469,7 +469,7 @@ def attention_mask(p):
     import numpy as np
     rows, keys = p['rows'], p['keys']
     if p['mask'] == 'causal':
-        return np.tril(np.ones((rows, keys), dtype=bool), keys - rows)
+        return np.tril(np.ones((rows, keys), dtype=bool), p.get('query_start', keys - rows))
     mask = np.ones((rows, keys), dtype=bool)
     if p.get('mask_pattern') == 'prefix_state_block':
         mask[:keys - 1, keys - 1] = False  # the SmolVLA prefix state token starts a new attention block
@@ -483,19 +483,27 @@ def build_attention(p, rng, gen, work):
     import kernel_bench as bench
     from atlas_attention_v2_program import AttentionV2Config, stage_v2, unpack_output_v2
     reference = bench.load_reference('attention')
-    if p['head_dim'] != 64:
-        raise NoVariant(f"attention v2 requires head dimension 64; this launch has {p['head_dim']}")
+    dim = p['head_dim']
+    if dim == 64:
+        config_type, stage, unpack = AttentionV2Config, stage_v2, unpack_output_v2
+    elif dim in (128, 256):
+        from atlas_attention_wide_program import AttentionWideConfig, stage_wide, unpack_output_wide
+        config_type, stage, unpack = AttentionWideConfig, stage_wide, unpack_output_wide
+    else:
+        raise NoVariant(f"attention requires head dimension 64, 128, or 256; this launch has {dim}")
     rows, keys, heads, kv_heads = p['rows'], p['keys'], p['heads'], p['kv_heads']
     words = [bench.bf16_words(rng.standard_normal(shape, dtype=np.float32))
-             for shape in ((heads, rows, 64), (kv_heads, keys, 64), (kv_heads, keys, 64))]
+             for shape in ((heads, rows, dim), (kv_heads, keys, dim), (kv_heads, keys, dim))]
     q, k, v = (bench.bf16_values(x) for x in words)
     mask = attention_mask(p)
-    expected = reference.reference(q, k, v, mask)
+    expected = reference.reference(q, k, v, mask, scale=dim ** -0.5)
     exponents = dict(q_exponent=bench.fp8_scale(q), k_exponent=bench.fp8_scale(k), v_exponent=bench.fp8_scale(v))
     o_exponent = bench.fp8_scale(expected) if p['output_fp8'] else 0
     arguments = ['--rows', str(rows), '--keys', str(keys), '--heads', f'{heads}/{kv_heads}', '--mask', p['mask'],
                  '--q-exponent', str(exponents['q_exponent']), '--k-exponent', str(exponents['k_exponent']),
                  '--v-exponent', str(exponents['v_exponent']), '--o-exponent', str(o_exponent)]
+    if dim != 64:
+        arguments += ['--head-dim', str(dim)]
     if p['mask'] == 'causal':
         arguments += ['--query-start', str(p['query_start'])]
     if p['mask'] == 'arbitrary':
@@ -505,16 +513,16 @@ def build_attention(p, rng, gen, work):
     if p['output_fp8']:
         arguments.append('--fp8')
     source, record = gen('attention', arguments)
-    config = AttentionV2Config(rows, keys, heads, kv_heads, mask=p['mask'], query_start=p.get('query_start'),
-                               output_fp8=p['output_fp8'], o_exponent=o_exponent, **exponents)
-    arena, offsets = stage_v2(config, *words, mask_tiles=reference.mask_tiles(mask) if p['mask'] == 'arbitrary' else None)
+    config = config_type(rows, keys, heads, kv_heads, head_dim=dim, mask=p['mask'], query_start=p.get('query_start'),
+                         output_fp8=p['output_fp8'], o_exponent=o_exponent, **exponents)
+    arena, offsets = stage(config, *words, mask_tiles=reference.mask_tiles(mask) if p['mask'] == 'arbitrary' else None)
     if offsets != record['offsets']:
         raise ValueError('attention offsets differ between gen.py and the staged synthetic arena')
 
     def decode(raw):
-        value = unpack_output_v2(config, raw)
+        value = unpack(config, raw)
         return bench.fp8_values(value, o_exponent) if p['output_fp8'] else bench.bf16_values(value)
-    variant = 'attention v2' + (' packed decode' if config.decode_packed else '') + f", {offsets['unique_masks']} unique mask tiles"
+    variant = ('attention v2' if dim == 64 else f'attention wide d{dim}') + (' packed decode' if config.decode_packed else '') + f", {offsets['unique_masks']} unique mask tiles"
     return Built(source, arena, offsets['output'], offsets['output_bytes'], expected, decode, None, variant, record,
                  dict(**exponents, o_exponent=o_exponent))
 

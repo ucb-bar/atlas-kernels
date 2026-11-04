@@ -29,9 +29,9 @@ def linear(module, m, k, n, **extra):
 
 
 def toy_model():
-    """One Linear the default schedule runs, one width-32 RMSNorm the generator rejects, one unmapped softmax."""
+    """One Linear the default schedule runs, one width-33 RMSNorm the generator rejects, one unmapped softmax."""
     norm = dict(phase='inference', module='norm', source='toy.py:forward:2', op='aten.rms_norm.default',
-                inputs=[[[1, 8, 32], 'float32'], [[32], 'float32']], outputs=[[[1, 8, 32], 'float32']], count=2,
+                inputs=[[[1, 8, 33], 'float32'], [[33], 'float32']], outputs=[[[1, 8, 33], 'float32']], count=2,
                 flops_each=1024, where='atlas:rmsnorm', rule=1,
                 launch={'family': 'rmsnorm', 'per': {'op': 'aten.rms_norm.default'}})
     unmapped = dict(phase='inference', module='', source='toy.py:forward:3', op='aten.softmax.int',
@@ -336,6 +336,12 @@ class RunTest(unittest.TestCase):
             repaired = json.loads(functional.read_text())
             self.assertNotEqual(repaired['cache_identity']['words_sha256'], 'stale')
 
+    def test_causal_reference_mask_uses_explicit_query_start(self):
+        import numpy as np
+        actual = bench_model.attention_mask(dict(rows=2, keys=5, mask='causal', query_start=1))
+        np.testing.assert_array_equal(actual, [[True, True, False, False, False],
+                                              [True, True, True, False, False]])
+
     def test_runs_reports_no_variant_and_unmapped(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'coverage.json'
@@ -357,7 +363,7 @@ class RunTest(unittest.TestCase):
             self.assertIsNone(document['backend'])
             self.assertIsNone(gemm['backend'])
             self.assertEqual(norm['status'], 'no-variant')
-            self.assertIn("invalid choice: '32'", norm['error'])
+            self.assertIn("multiple of 32", norm['error'])
             self.assertEqual(norm['count'], 2)
             text = (out / 'MODEL-BENCH.md').read_text()
             self.assertIn('no-variant', text)

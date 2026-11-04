@@ -60,8 +60,8 @@ def main():
          '--workers', str(args.workers), '--atlas-mlir-bin', str(args.atlas_mlir_bin),
          '--min-tier', args.min_tier, '--command', COMMAND,
          '--note', 'Placement comes from `coverage/examples/causal_decoder/mapping.yaml`, which maps only ops an existing family '
-                   'computes and cites why; the attention core stays unmapped because attention v2 requires head dimension 64 and this '
-                   'decoder uses 8. The export is `export_ops.py causal_decoder --loader merlin:examples/workloads/causal_decoder/loader.py`, '
+                   'computes and cites why; the attention core stays unmapped because this decoder uses head dimension 8, while '
+                   'the family supports 64, 128, and 256. The export is `export_ops.py causal_decoder --loader merlin:examples/workloads/causal_decoder/loader.py`, '
                    'the same command as `coverage/examples/causal_decoder/REPORT.md`, which lists the decoder with no placement rules.'],
     ]
     for step in steps:

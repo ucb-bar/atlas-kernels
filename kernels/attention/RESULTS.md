@@ -11,3 +11,14 @@ Cases without an independent golden: `attention/sv-prefix-arbitrary`, `attention
 
 - sv-prefix-arbitrary: VLM prefix self-attention, 15 query and 5 KV heads, prefix block mask (176 image and language tokens, then state), BF16 output
 - tl-prefill-causal: prefill self-attention, 32 query and 4 KV heads, causal, FP8 output
+
+## Wide-head follow-up cases
+
+These 4 additional seeded synthetic cases run the new wide entry point on unmodified npu_model 47b8599 with `numerics="rtl"`. Every timed output equals its functional output byte for byte. General random-input attention has no independent Atlas-arithmetic golden; the separate unit tests provide exact single-key GQA checks. The FP32 reference uses the ideal scale `head_dim**-0.5`, while the device rounds that scale to BF16. Reproduce with the family bench and the 4 `wide*` case names from `reference.py`.
+
+| case | head dimension | shape (rows, keys, query heads, KV heads) | cosine | relative error | model cycles | instructions |
+| --- | ---: | --- | ---: | ---: | ---: | ---: |
+| wide128-causal-decode | 128 | 1x65x2x1 | 0.9978755988189125 | 0.06585483149202766 | 93061 | 2399 |
+| wide128-none-tail | 128 | 33x35x2x1 | 0.9989041284922684 | 0.04728528289196089 | 113337 | 2815 |
+| wide256-causal-tail | 256 | 33x65x2x1 | 0.9988310542309344 | 0.04849082227283172 | 258133 | 5842 |
+| wide256-none-decode | 256 | 1x65x2x1 | 0.9980171861058436 | 0.0660673136998281 | 177193 | 4106 |
