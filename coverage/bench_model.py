@@ -36,6 +36,7 @@ from fnmatch import fnmatchcase
 import hashlib
 from importlib import metadata
 import json
+from math import prod as product
 import os
 from pathlib import Path
 import shlex
@@ -59,13 +60,6 @@ class NoVariant(Exception):
 
 def pad32(value):
     return -(-value // 32) * 32
-
-
-def product(values):
-    result = 1
-    for value in values:
-        result *= value
-    return result
 
 
 def row_matches(match, row):
@@ -904,10 +898,6 @@ def merge(launches, results):
 
 
 # ----------------------------------------------------------------------------------------------- report
-
-def gflop(value):
-    return f'{value / 1e9:,.3f}'
-
 
 def shape_text(record):
     output = record['outputs'][0] if record.get('outputs') else [[], '']
