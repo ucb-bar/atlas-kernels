@@ -1,0 +1,46 @@
+# atlas-kernels manifest for kernels/attention/ (schema atlas.kernel.v1).
+# select rules use the fields of Merlin radiance kernel_library/selection.yaml: op, dtype, and shape
+# constraints choose this family and, for projection_gemm, the variant (generator module) to emit.
+schema: atlas.kernel.v1
+family: attention
+summary: "head-dimension-64 attention: QK^T, masked softmax (vexp, vrecip, fixed P scale 256), PV, integral GQA"
+stage: standalone
+entry_points:
+  - module: atlas_attention_v2_program
+    function: AttentionV2Config
+    parameters: "query_rows, keys, query_heads, kv_heads, head_dim=64, mask, query_start, scale=0.125, q/k/v_exponent, p_exponent=-8, output_fp8, o_exponent, packed_decode"
+  - module: atlas_attention_v2_program
+    function: stage_v2
+    parameters: "config, q, k, v, mask_tiles=None"
+  - module: atlas_attention_v2_program
+    function: assembly_v2
+    parameters: "config, offsets, *, dram_base=0x90000000"
+  - module: atlas_attention_program
+    function: assembly
+    parameters: version 1 (legacy TinyLlama worker)
+ops: [aten.scaled_dot_product_attention, "eager attention (aten.matmul, aten.softmax)"]
+dtypes:
+  q: bf16 staged to fp8_e4m3
+  k: bf16 staged to fp8_e4m3
+  v: bf16 staged to fp8_e4m3
+  output: bf16 or fp8_e4m3
+constraints:
+  head_dim: 64
+  gqa: query_heads a multiple of kv_heads
+  tiles: at most 64 key tiles and 128 query tiles
+select:
+  - op: aten.scaled_dot_product_attention
+    dtype: bf16
+    shape: "head_dim 64, keys <= 2048"
+    variant: assembly_v2
+models:
+  - model: tinyllama
+    use: "causal, FP8 output, 32/4 heads"
+    shapes: [128x128 prefill, 1x129 decode, 1x130 decode]
+  - model: smolvla
+    use: BF16 output
+    shapes: [1024x1024 vision 12/12, 177x177 prefix 15/5, 50x227 and 50x177 expert 15/5]
+generator: "make gen-attention ARGS=\"--rows R --keys K --heads Q/KV [--causal] [--query-start S] [--fp8]\""
+tests: []
+checks: [check_program_v2 static check, SHA-pinned by atlas-mlir tools/tiny_full/attention_v2_worker.py, every TinyLlama and SmolVLA attention launch executed on npu_model 47b8599 numerics=rtl]
+run_tests: "make test-<family> NPU_MODEL=<npu_model 47b8599 checkout>"

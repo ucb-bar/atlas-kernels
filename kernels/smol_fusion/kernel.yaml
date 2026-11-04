@@ -1,0 +1,40 @@
+# atlas-kernels manifest for kernels/smol_fusion/ (schema atlas.kernel.v1).
+# select rules use the fields of Merlin radiance kernel_library/selection.yaml: op, dtype, and shape
+# constraints choose this family and, for projection_gemm, the variant (generator module) to emit.
+schema: atlas.kernel.v1
+family: smol_fusion
+summary: "SmolVLA projection panels with fused bias, tanh GELU, connector scale, and FP8 output for fc2"
+stage: "projection_gemm launch with a fused epilogue, relocated to the 0x90000000 arena"
+entry_points:
+  - module: smol_fusion_program
+    function: stage_panel
+    parameters: "row, initial, *, operations=(), bias_bf16=None, weight_source=None"
+  - module: smol_fusion_fp8
+    function: stage_fc1_fp8
+    parameters: "row, initial, *, bias_bf16, output_scale_exponent, weight_source=None"
+ops: [aten.linear + bias, aten.gelu (tanh), connector scale]
+operations:
+  - []
+  - [bias]
+  - [bias, gelu_tanh]
+  - [connector_scale]
+dtypes:
+  a: fp8_e4m3
+  b: fp8_e4m3
+  bias: bf16
+  output: bf16 or fp8_e4m3
+constraints:
+  shapes: projection_gemm traffic-reuse shapes
+select:
+  - op: aten.linear then aten.gelu(tanh)
+    dtype: fp8_e4m3
+    shape: 128x768x3072 (vision fc1)
+    variant: stage_fc1_fp8
+models:
+  - model: smolvla
+    use: vision fc1 bias and GELU with FP8 output (192 fused panels in the fc1-bias-gelu-fp8 fusion set); default builds run bias and GELU on the host
+    shapes: [128x768x3072]
+generator: "make gen-smol_fusion ARGS=\"--shape MxKxN --operations bias,gelu_tanh | --fp8\""
+tests: []
+checks: ["atlas-mlir test/test_smol_fusion_program.py, test_smol_fp8_producer.py, test_smol_fusion_assets.py", Smol fast-build ELF identity regenerates every fused panel through these generators]
+run_tests: "make test-<family> NPU_MODEL=<npu_model 47b8599 checkout>"

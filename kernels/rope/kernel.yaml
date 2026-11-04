@@ -1,0 +1,35 @@
+# atlas-kernels manifest for kernels/rope/ (schema atlas.kernel.v1).
+# select rules use the fields of Merlin radiance kernel_library/selection.yaml: op, dtype, and shape
+# constraints choose this family and, for projection_gemm, the variant (generator module) to emit.
+schema: atlas.kernel.v1
+family: rope
+summary: "rotate-half rotary embedding RNE(RNE(x*cos) + RNE(r*sin)) over retained BF16 q and k"
+stage: post-pass appended to the q_proj and k_proj projection launches
+entry_points:
+  - module: atlas_rope_postpass
+    function: ResidentRopeEpilogue
+    parameters: "Epilogue fields plus cos_offset, sin_offset, neg_sin_offset, head_dimension=64"
+  - module: atlas_rope_postpass
+    function: append_postpass
+    parameters: "source, epilogue"
+ops: ["apply_rotary_pos_emb (aten.mul, aten.cat, aten.neg, aten.add)"]
+dtypes:
+  input: bf16
+  tables: "bf16 cos, sin, and -sin tiles"
+  output: bf16
+constraints:
+  head_dimension: 64
+  rows: 32 or 128 physical rows
+select:
+  - op: apply_rotary_pos_emb
+    dtype: bf16
+    shape: "q (N 2048) or k (N 256), head_dim 64"
+    variant: ResidentRopeEpilogue on the producing projection
+models:
+  - model: tinyllama
+    use: prefill and decode q and k
+    shapes: [128x2048x2048, 128x2048x256, 32x2048x2048, 32x2048x256]
+generator: "make gen-rope ARGS=\"--shape MxKxN\""
+tests: []
+checks: [no standalone numeric test yet; every TinyLlama RoPE launch executed on npu_model 47b8599 numerics=rtl]
+run_tests: "make test-<family> NPU_MODEL=<npu_model 47b8599 checkout>"

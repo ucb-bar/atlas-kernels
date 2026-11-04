@@ -1,6 +1,7 @@
 """Every library module has a unique basename and is the file `import` loads."""
 import importlib.util
 from pathlib import Path
+import re
 import sys
 import unittest
 
@@ -10,7 +11,15 @@ import atlas_kernels_path  # noqa: E402
 
 class LibraryLayout(unittest.TestCase):
     def modules(self):
-        return [path for directory in atlas_kernels_path.DIRECTORIES for path in sorted(directory.glob("*.py"))]
+        # gen.py in each family is a command-line script, never imported, so it is not a library module.
+        return [path for directory in atlas_kernels_path.DIRECTORIES for path in sorted(directory.glob("*.py"))
+                if path.name != "gen.py"]
+
+    def test_no_module_imports_a_generator_script(self):
+        pattern = re.compile(r"^\s*(import gen\b|from gen import)", re.MULTILINE)
+        for path in self.modules():
+            with self.subTest(module=path.name):
+                self.assertIsNone(pattern.search(path.read_text()))
 
     def test_basenames_are_unique(self):
         names = [path.name for path in self.modules()]

@@ -1,0 +1,29 @@
+# atlas-kernels manifest for kernels/rne_add/ (schema atlas.kernel.v1).
+# select rules use the fields of Merlin radiance kernel_library/selection.yaml: op, dtype, and shape
+# constraints choose this family and, for projection_gemm, the variant (generator module) to emit.
+schema: atlas.kernel.v1
+family: rne_add
+summary: "BF16 add rounded to nearest even (host FP32 add then BF16 RNE) from truncating VPU arithmetic, 34 instructions"
+stage: "epilogue stage (Step \"add_rne\") and rope post-pass building block"
+entry_points:
+  - module: atlas_rne_add
+    function: rne_add
+    parameters: "a, b, result, sign=4, *, constants=True"
+ops: [aten.add.Tensor (bf16 residual)]
+dtypes:
+  inputs: bf16
+  output: bf16
+constraints:
+  registers: "even pairs disjoint from m6..m30, m48, m50, and constants m32..m46"
+select:
+  - op: aten.add.Tensor
+    dtype: bf16
+    shape: projection output tile
+    variant: "epilogue Step(\"add_rne\")"
+models:
+  - model: tinyllama
+    use: prefill residual adds after o_proj and down_proj; final add of the RoPE post-pass
+generator: "make gen-rne_add ARGS=\"[--registers a,b,result,sign]\""
+tests: []
+checks: [no standalone numeric test yet; every TinyLlama launch using it executed on npu_model 47b8599 numerics=rtl]
+run_tests: "make test-<family> NPU_MODEL=<npu_model 47b8599 checkout>"
