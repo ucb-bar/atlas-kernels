@@ -22,3 +22,5 @@ These 4 additional seeded synthetic cases run the new wide entry point on unmodi
 | wide128-none-tail | 128 | 33x35x2x1 | 0.9989041284922684 | 0.04728528289196089 | 113336 | 2814 |
 | wide256-causal-tail | 256 | 33x65x2x1 | 0.9988310542309344 | 0.04849082227283172 | 258132 | 5841 |
 | wide256-none-decode | 256 | 1x65x2x1 | 0.9980171861058436 | 0.0660673136998281 | 177192 | 4105 |
+
+The opt-in `vision-fast` schedule additionally measures full SmolVLA vision attention at 1024x1024, 12/12 heads, dimension 64, and no mask: 26,092,660 original cycles and 19,752,187 new cycles on every one of 5 distinct captured kit programs. All old/new full arenas are bit-identical. These full measurements replace the previous row-subset estimate for the 24 vision launches; see [VISION-FAST.md](VISION-FAST.md) for compiler, RTL scope, and adoption details.

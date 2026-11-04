@@ -30,6 +30,9 @@ entry_points:
   - module: atlas_attention_v2_halt
     function: assembly_v2
     parameters: "config, offsets, *, dram_base=0x90000000; explicit v2-no-halt-delay variant"
+  - module: atlas_attention_vision_fast
+    function: assembly_v2
+    parameters: "config, offsets, *, dram_base=0x90000000; opt-in vision-fast, head_dim=64, unmasked whole tiles, equal heads, BF16 output"
 ops: [aten.scaled_dot_product_attention, "eager attention (aten.matmul, aten.softmax)"]
 dtypes:
   q: bf16 staged to fp8_e4m3
@@ -63,7 +66,7 @@ models:
   - model: smolvla
     use: BF16 output
     shapes: [1024x1024 vision 12/12, 177x177 prefix 15/5, 50x227 and 50x177 expert 15/5]
-generator: "make gen-attention ARGS=\"--rows R --keys K --heads Q/KV [--head-dim 64|128|256] [--variant v2|v2-no-halt-delay] [--causal] [--query-start S] [--fp8]\""
-tests: [tests/test_attention_wide.py, tests/test_attention_halt.py, ../../lib/tests/test_kernel_manifests.py, ../../lib/tests/test_kernel_bench.py, ../../coverage/tests/test_bench_model.py]
+generator: "make gen-attention ARGS=\"--rows R --keys K --heads Q/KV [--head-dim 64|128|256] [--variant v2|v2-no-halt-delay|vision-fast] [--causal] [--query-start S] [--fp8]\""
+tests: [tests/test_vision_fast.py, tests/test_attention_wide.py, tests/test_attention_halt.py, ../../lib/tests/test_kernel_manifests.py, ../../lib/tests/test_kernel_bench.py, ../../coverage/tests/test_bench_model.py]
 checks: [check_program_v2 static check, wide exact single-key GQA with Q=K=0, seeded random multi-key GQA fidelity and exact timed-versus-functional agreement, timed segmented-DMA regression, SHA-pinned by atlas-mlir tools/tiny_full/attention_v2_worker.py, every TinyLlama and SmolVLA attention launch executed on npu_model 47b8599 numerics=rtl]
 run_tests: "make test-attention test-lib test-coverage NPU_MODEL=<npu_model 47b8599 checkout>"

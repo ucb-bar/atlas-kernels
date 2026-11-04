@@ -1,5 +1,7 @@
 # smolvla kernel bench at model shapes
 
+Historical report from `6123bef`, retained below with its original synthetic-input receipts and row-subset estimate. Later full captured-input measurements qualify all 24 vision launches: original v2 takes 26,092,660 cycles, and opt-in vision-fast takes 19,752,187 cycles. Replacing that estimate gives 5,160,679,740 original device cycles, or 5,008,508,388 with the opt-in schedule and all other published counts unchanged. See [the measured correction and qualification](../../../kernels/attention/VISION-FAST.md).
+
 Regenerate: `PYTHONPATH="$NPU_MODEL" "$MODEL_PYTHON" coverage/bench_model.py --coverage coverage/coverage.json --model smolvla --model-root "$NPU_MODEL" --out "$OUT/bench" --workers 32 --atlas-mlir-bin "$ATLAS_MLIR_BIN" --min-tier stream-verified`
 
 Input: `coverage/coverage.json` (SHA-256 `4abb075f1683e18d7e1591b408feaab8ac55652db0dc3a81282c3de56b6c17a5`), coverage status COMPLETE. The coverage derives 28 distinct launches; 28 executed on npu_model `47b8599d8ffbe5ddd96059ffe2b5be2427a410f5` with numerics="rtl" on seeded synthetic inputs at the model's shape (16 worker processes; 12,678 job-seconds in all, longest job 1,659 s).

@@ -37,9 +37,12 @@ make gen-attention NPU_MODEL=/path/to/npu-model ARGS="--rows 128 --keys 128 --he
 make gen-attention NPU_MODEL=/path/to/npu-model ARGS="--rows 177 --keys 177 --heads 15/5"
 make gen-attention NPU_MODEL=/path/to/npu-model ARGS="--rows 33 --keys 65 --heads 2/1 --head-dim 256 --causal"
 make gen-attention NPU_MODEL=/path/to/npu-model ARGS="--rows 1 --keys 129 --heads 32/4 --causal --query-start 128 --fp8 --variant v2-no-halt-delay"
+make gen-attention NPU_MODEL=/path/to/npu-model ARGS="--rows 1024 --keys 1024 --heads 12/12 --variant vision-fast"
 ```
 
 `gen.py` keeps the existing dimension-64 generator and artifact names by default; `--head-dim 128` or `--head-dim 256` selects the wide module and adds a dimension suffix. It writes the program text (`.S`), the 32-bit words npu_model's assembler produces (`.bin`), and a `.json` record into `build/attention/`. The dimension-64-only halt variant requires `--variant v2-no-halt-delay`; combining it with a wide head is rejected. `kernel.yaml` is the machine-readable manifest.
+
+`--variant vision-fast` explicitly selects `atlas_attention_vision_fast.assembly_v2(config, offsets, *, dram_base=0x90000000)`, using the original `AttentionV2Config` and `stage_v2` arena ABI. It requires head dimension 64, unmasked whole tiles, equal query and KV head counts, and BF16 output; combining it with a wide head is rejected. Its generated artifacts use the `-vision-fast` suffix. The default remains original v2. See [VISION-FAST.md](VISION-FAST.md) for the schedule, measured scope, and adoption requirements.
 
 ## Reference and bench results
 
