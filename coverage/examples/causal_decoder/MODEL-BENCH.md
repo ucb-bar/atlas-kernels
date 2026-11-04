@@ -1,10 +1,16 @@
 # causal_decoder kernel bench at model shapes
 
-Regenerate: `MERLIN_ROOT=/path/to/merlin TORCH_PYTHON=/path/to/venv/bin/python NPU_MODEL=/path/to/npu-model python3 -B coverage/examples/causal_decoder/bench.py --out "$OUT"`
+Regenerate: `MERLIN_ROOT=/path/to/merlin EXPORT_PYTHON=/path/to/export/bin/python MODEL_PYTHON=/path/to/model/bin/python NPU_MODEL=/path/to/npu-model python3 -B coverage/examples/causal_decoder/bench.py --atlas-mlir-bin /path/to/atlas-mlir/build/bin --min-tier stream-verified --out "$OUT"`
 
-Input: `table/coverage.json` (SHA-256 `a9c5d9b7ec6e14718e171f6cb7c18201329b698bc60fa7adf762aa0b4a57371e`), coverage status INCOMPLETE. Every distinct device launch the coverage places on Atlas ran on npu_model `47b8599d8ffbe5ddd96059ffe2b5be2427a410f5` with numerics="rtl" on seeded synthetic inputs at the model's shape (32 worker processes; 14 job-seconds in all, longest job 4 s).
+Input: `table/coverage.json` (SHA-256 `a9c5d9b7ec6e14718e171f6cb7c18201329b698bc60fa7adf762aa0b4a57371e`), coverage status INCOMPLETE. The coverage derives 7 distinct launches; 2 executed on npu_model `47b8599d8ffbe5ddd96059ffe2b5be2427a410f5` with numerics="rtl" on seeded synthetic inputs at the model's shape (32 worker processes; 14 job-seconds in all, longest job 4 s).
 
 Model cycles are npu_model Core cycle-model counts, not RTL cycles. Cycles x count multiplies one launch by the number of launches in the model; the sums below are device-only estimates that ignore host time, launch overhead, and data movement between launches. Bit-exact compares output bytes with the independent lib/golden reference where the family has one; cosine and rel-err compare the decoded output with an FP32 PyTorch reference on the unquantized inputs, so they include FP8 input quantization. Inputs are synthetic, so fidelity and data-dependent cycles are representative, not the model's.
+
+A distinct launch groups the same shape and variant; a distinct program is the address-specific program text, as in the separate 1,589-program kit check.
+
+Shares below are by launch kind: `epilogue`, `rne_add`, `rope`, and `smol_fusion` include their GEMM projection and fused stage, while `projection_gemm` covers unfused panels. They are not shares of non-GEMM time; the generator metadata does not provide separately measured cycles for those stages.
+
+Compiler backend: machine IR, atlas-opt stream and timing verifiers, and atlas-emit, with minimum tier `stream-verified`. Successful jobs require emitted words to equal npu_model's assembler; per-job JSON records binary SHA-256 digests, diagnostics, and word counts.
 
 | device launches | derived here | qualified kit |
 | --- | ---: | ---: |
@@ -15,7 +21,9 @@ Model cycles are npu_model Core cycle-model counts, not RTL cycles. Cycles x cou
 
 Device cycle estimate (sum of model cycles x count over 2 of 8 launches): 17,617 npu_model model cycles. It ignores host time and launch overhead.
 
-| family | launches | launches with cycles | model cycles x count | share |
+Compiler tier counts by distinct launch: 2 `verified`.
+
+| launch kind | launches | launches with cycles | model cycles x count | share |
 | --- | ---: | ---: | ---: | ---: |
 | `projection_gemm` | 2 | 2 | 17,617 | 100.00% |
 | `epilogue` | 2 | 0 | 0 | 0.00% |
@@ -38,15 +46,15 @@ Unsupported or failed launches: 5.
 
 ## Launches
 
-| family | shape | export dtype | variant | words | count | model cycles | cycles x count | golden | bit-exact | timed equals functional | cosine | rel-err | modules |
-| --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- | :-: | :-: | ---: | ---: | --- |
-| `epilogue` | 32x32x64 (logical 8x32x64) mul FP8 out | float32 | no-variant | | 1 | | | | | | | | `up` |
-| `epilogue` | 32x32x64 (logical 8x32x64) silu | float32 | no-variant | | 1 | | | | | | | | `gate` |
-| `projection_gemm` | 32x32x64 (logical 8x32x64) | float32 | default schedule (no traffic-reuse recipe for this shape) | 74 | 1 | 7,058 | 7,058 | ordered_matmul | exact | exact | 0.99924 | 3.912% | `head` |
-| `projection_gemm` | 32x32x96 (logical 8x32x96) | float32 | default schedule (no traffic-reuse recipe for this shape) | 74 | 1 | 10,559 | 10,559 | ordered_matmul | exact | exact | 0.99935 | 3.608% | `qkv` |
-| `rmsnorm` | 32x32 (8 rows) | float32 | no-variant | | 2 | | | | | | | | `norm` |
-| `rne_add` | 32x32x32 (logical 8x32x32) | float32 | no-variant | | 1 | | | | | | | | `projection` |
-| `rne_add` | 32x64x32 (logical 8x64x32) | float32 | no-variant | | 1 | | | | | | | | `down` |
+| family | shape | export dtype | variant | tier | words | count | model cycles | cycles x count | golden | bit-exact | timed equals functional | cosine | rel-err | modules |
+| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- | :-: | :-: | ---: | ---: | --- |
+| `epilogue` | 32x32x64 (logical 8x32x64) mul FP8 out | float32 | no-variant | n/a | | 1 | | | | | | | | `up` |
+| `epilogue` | 32x32x64 (logical 8x32x64) silu | float32 | no-variant | n/a | | 1 | | | | | | | | `gate` |
+| `projection_gemm` | 32x32x64 (logical 8x32x64) | float32 | default schedule (no traffic-reuse recipe for this shape) | verified | 74 | 1 | 7,058 | 7,058 | ordered_matmul | exact | exact | 0.99924 | 3.912% | `head` |
+| `projection_gemm` | 32x32x96 (logical 8x32x96) | float32 | default schedule (no traffic-reuse recipe for this shape) | verified | 74 | 1 | 10,559 | 10,559 | ordered_matmul | exact | exact | 0.99935 | 3.608% | `qkv` |
+| `rmsnorm` | 32x32 (8 rows) | float32 | no-variant | n/a | | 2 | | | | | | | | `norm` |
+| `rne_add` | 32x32x32 (logical 8x32x32) | float32 | no-variant | n/a | | 1 | | | | | | | | `projection` |
+| `rne_add` | 32x64x32 (logical 8x64x32) | float32 | no-variant | n/a | | 1 | | | | | | | | `down` |
 
 `words` is the executed program size in 32-bit instruction words (after the arena relocation the bench applies). Bit-exact covers the logical rows and columns the model consumes; a padding note counts output words in the zero-padded rows or columns that differ from the golden (`+0/-0`: only the sign of zero differs).
 
@@ -74,3 +82,5 @@ Unsupported or failed launches: 5.
 ## Notes
 
 Placement comes from `coverage/examples/causal_decoder/mapping.yaml`, which maps only ops an existing family computes and cites why; the attention core stays unmapped because attention v2 requires head dimension 64 and this decoder uses 8. The export is `export_ops.py causal_decoder --loader merlin:examples/workloads/causal_decoder/loader.py`, the same command as `coverage/examples/causal_decoder/REPORT.md`, which lists the decoder with no placement rules.
+
+Functional and timed results are reused from Track G only after regenerating each job with the pinned Track G staging code and this bench, proving equal program-word and staged-arena SHA-256 digests, and passing the compiler word check; the per-job proof is in `reuse-proof.json` beside the generated JSON. No functional or timed job changed, including the row-subset estimate.
