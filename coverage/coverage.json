@@ -1,0 +1,188 @@
+{
+ "schema": "atlas.coverage.summary.v1",
+ "models": {
+  "tinyllama": {
+   "inventory_nodes": 4540,
+   "aggregated_records": 227,
+   "capture_crosscheck": "PASS",
+   "derived_launches": {
+    "rmsnorm": 132,
+    "projection_calls": 465,
+    "attention": 66
+   },
+   "kit_launches": {
+    "projection_calls": 465,
+    "projection_panels": 840,
+    "attention": 66,
+    "rmsnorm": 132
+   },
+   "flops": {
+    "host": 1342089,
+    "build": 74886,
+    "atlas": 272144425072
+   },
+   "atlas_share_of_runtime_flops": 0.9999950684921026,
+   "by_where": {
+    "atlas:attention": {
+     "ops": 1012,
+     "flops": 3081484736
+    },
+    "atlas:epilogue": {
+     "ops": 132,
+     "flops": 32215040
+    },
+    "atlas:projection_gemm": {
+     "ops": 465,
+     "flops": 268949258240
+    },
+    "atlas:rmsnorm": {
+     "ops": 1056,
+     "flops": 46869680
+    },
+    "atlas:rne_add": {
+     "ops": 44,
+     "flops": 11534336
+    },
+    "atlas:rope": {
+     "ops": 1056,
+     "flops": 23063040
+    },
+    "build:atlas-kernels/kernels/attention/atlas_attention_v2_program.py": {
+     "ops": 9,
+     "flops": 33286
+    },
+    "build:atlas-mlir/tools/tiny_full/fusion.py": {
+     "ops": 54,
+     "flops": 41600
+    },
+    "host:atlas-mlir/runtime/tiny_attention.c": {
+     "ops": 528,
+     "flops": 0
+    },
+    "host:atlas-mlir/tools/tiny_full/tiny_full_model.c": {
+     "ops": 184,
+     "flops": 1342089
+    }
+   },
+   "builds": {
+    "default": "TinyLlama default SIMS build: 840 projection, 66 attention, and 132 norm launches (1,038 in all), with device pre-attention and post-o RMSNorm, prefill and decode q/k RoPE, and prefill o/down residual adds. tools/tiny_full/attention_export.py writes these launches and capability macros (atlas-mlir: tools/tiny_full/attention_export.py:318-344); the counts are read from the qualified build's generated tiny_full_assets.h (local receipt).",
+    "fast": "TinyLlama fast builds: the same 1,038 launches with FP8 weights read in place (atlas-mlir: docs/tiny-fast-build.md:12) and host-only copy changes (host levels 0 to 2); op placement is identical to default."
+   }
+  },
+  "smolvla": {
+   "inventory_nodes": 18923,
+   "aggregated_records": 392,
+   "capture_crosscheck": "PASS",
+   "derived_launches": {
+    "projection_calls": 1421,
+    "attention": 200,
+    "smol_fusion_calls": 24
+   },
+   "kit_launches": {
+    "projection_calls": 1421,
+    "projection_panels": 2715,
+    "attention": 200,
+    "smol_fusion_calls": 24
+   },
+   "flops": {
+    "host": 408646130,
+    "build": 5939984,
+    "atlas": 600239976720
+   },
+   "atlas_share_of_runtime_flops": 0.9993196585916387,
+   "by_where": {
+    "atlas:attention": {
+     "ops": 3736,
+     "flops": 87171967248
+    },
+    "atlas:projection_gemm": {
+     "ops": 1421,
+     "flops": 512992512000
+    },
+    "atlas:smol_fusion": {
+     "ops": 24,
+     "flops": 75497472
+    },
+    "build:atlas-kernels/kernels/attention/atlas_attention_v2_program.py": {
+     "ops": 20,
+     "flops": 4194304
+    },
+    "build:merlin/examples/atlas/comparisons/smol_policy_block.c": {
+     "ops": 2992,
+     "flops": 1713152
+    },
+    "build:merlin/examples/atlas/comparisons/smol_policy_graph.c": {
+     "ops": 161,
+     "flops": 32400
+    },
+    "build:merlin/examples/atlas/comparisons/smol_vision_graph.c": {
+     "ops": 56,
+     "flops": 128
+    },
+    "host:merlin/examples/atlas/comparisons/smol_host_controls.c": {
+     "ops": 240,
+     "flops": 173288
+    },
+    "host:merlin/examples/atlas/comparisons/smol_host_ops.c": {
+     "ops": 3854,
+     "flops": 173573002
+    },
+    "host:merlin/examples/atlas/comparisons/smol_host_rope.c": {
+     "ops": 4592,
+     "flops": 37754880
+    },
+    "host:merlin/examples/atlas/comparisons/smol_policy_block.c": {
+     "ops": 1392,
+     "flops": 0
+    },
+    "host:merlin/examples/atlas/comparisons/smol_policy_graph.c": {
+     "ops": 357,
+     "flops": 54080
+    },
+    "host:merlin/examples/atlas/comparisons/smol_policy_ops.c": {
+     "ops": 10,
+     "flops": 360000
+    },
+    "host:merlin/examples/atlas/comparisons/smol_vision_graph.c": {
+     "ops": 18,
+     "flops": 122880
+    },
+    "host:merlin/examples/atlas/comparisons/smol_vision_ops.c": {
+     "ops": 50,
+     "flops": 196608000
+    }
+   },
+   "builds": {
+    "default": "SmolVLA default SIMS builds (42-phase, 199-phase, and full): 2,715 projection panels (atlas-mlir: tools/smol_full_plan.py:52) and 200 attention launches (atlas-mlir: tools/smol_attention_assets.py:12), with the fc1-bias-gelu-fp8 fusion profile (atlas-mlir: docs/smol_attention_capture.md:77) on the 192 vision fc1 panels; the profile and counts are read from the qualified bundle's kernels.json (local receipt).",
+    "fast": "SmolVLA fast builds: the same bundle and launches with immutable linked weights (atlas-mlir: docs/smol-fast-build.md:3); op placement is identical to default."
+   }
+  }
+ },
+ "coverage": {
+  "projection_gemm": [
+   "SV",
+   "TL"
+  ],
+  "epilogue": [
+   "TL"
+  ],
+  "rne_add": [
+   "TL"
+  ],
+  "rmsnorm": [
+   "TL"
+  ],
+  "rope": [
+   "TL"
+  ],
+  "attention": [
+   "SV",
+   "TL"
+  ],
+  "smol_fusion": [
+   "SV"
+  ],
+  "resnet_pool": [],
+  "resnet_patch_gather": []
+ }
+}
