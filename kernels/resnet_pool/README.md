@@ -23,3 +23,5 @@ make gen-resnet_pool NPU_MODEL=/path/to/npu-model ARGS="--input 64x112x112"
 ## Tests and checks
 
 `tests/test_resnet_maxpool.py` checks geometry, the one-hot shift matrices, and, with `NPU_MODEL`, executes the pool on npu_model `47b8599` through `lib/atlas_rtl_reference.py` and compares every output byte with the byte maximum, round-trips every admitted byte, and runs the timed core checks for alignment, banks, and hazards.
+
+The shared [per-family make interface](../README.md) provides `gen`, `data`, `test`, and explicitly provisioned `rtl` targets for this family, with generated payloads in ignored output directories and reference gaps recorded as PENDING.

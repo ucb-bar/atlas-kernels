@@ -22,8 +22,13 @@ ARGS ?=
 ENV := PYTHONDONTWRITEBYTECODE=1 $(if $(NPU_MODEL),PYTHONPATH=$(NPU_MODEL) ATLAS_NPU_MODEL_ROOT=$(NPU_MODEL))
 
 WORKERS ?= 24
-.PHONY: test test-lib test-coverage test-cites test-bench-model bench-model coverage $(addprefix test-,$(FAMILIES)) $(addprefix gen-,$(GENERATORS))
+.PHONY: test test-lib test-coverage test-cites test-bench-model test-families bench-model coverage $(addprefix test-,$(FAMILIES)) $(addprefix gen-,$(GENERATORS))
 test: $(addprefix test-,$(FAMILIES)) test-lib test-coverage test-cites test-bench-model
+
+# Opt-in representative execution checks for all nine family make interfaces.
+# OUT is a shared output root, with one ignored directory per family.
+test-families:
+	@$(foreach family,$(GENERATORS),$(MAKE) -C kernels/$(family) test PYTHON="$(PYTHON)" NPU_MODEL="$(NPU_MODEL)" ATLAS_MLIR_BIN="$(ATLAS_MLIR_BIN)" $(if $(OUT),OUT="$(abspath $(OUT))") || exit $$?;)
 
 test-lib:
 	$(ENV) $(PYTHON) -m unittest discover -s lib/tests -t lib/tests -v

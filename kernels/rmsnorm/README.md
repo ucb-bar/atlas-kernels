@@ -35,3 +35,5 @@ The streamed layout uses the default 1572864-byte VMEM: H starts at byte 524288 
 ## Tests and checks
 
 `tests/test_norm_postpass.py` checks register hygiene (reserved scratch pairs and the default-sentinel refusal). `tests/test_rmsnorm_tiled.py` checks admission, arena bounds, the short DMA transfer for width 32, and exact signed unit rows at the expanded widths on npu_model when `ATLAS_NPU_MODEL_ROOT` is set. The random-input bench still has no independent Atlas-arithmetic golden. Legacy exactness is established by executing every TinyLlama norm launch on npu_model `47b8599` with `numerics="rtl"` in the export flow (atlas-mlir `tools/tiny_full/export_capture.py --qualify-launches`).
+
+The shared [per-family make interface](../README.md) provides `gen`, `data`, `test`, and explicitly provisioned `rtl` targets for this family, with generated payloads in ignored output directories and reference gaps recorded as PENDING.

@@ -39,3 +39,5 @@ make gen-projection_gemm NPU_MODEL=/path/to/npu-model ARGS="--shape 64x736x32"
 - `tests/test_program_checks.py` and `tests/test_program_legacy_epilogue.py` check register admission for every recipe with and without fused hooks.
 - `tests/test_program_reuse_resident.py` assembles a program with npu_model's assembler and needs `NPU_MODEL`.
 - In atlas-mlir, `test/test_program_traffic_reuse.py` checks dispatch and the source closure, and the TinyLlama and SmolVLA capture flows execute every production launch on npu_model `47b8599` (`lib/atlas_execution.py`).
+
+The shared [per-family make interface](../README.md) provides `gen`, `data`, `test`, and explicitly provisioned `rtl` targets for this family, with generated payloads in ignored output directories and reference gaps recorded as PENDING.
