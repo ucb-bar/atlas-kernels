@@ -113,6 +113,41 @@ def sample(mnemonic, cls):
 
 
 class SourceIdentityTest(unittest.TestCase):
+    def test_git_tree_prunes_before_descending(self):
+        import hashlib, subprocess, tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'source'
+            build = Path(directory) / 'build'
+            (source / '.git').mkdir(parents=True)
+            (source / 'safe').mkdir()
+            build.mkdir()
+            content = b'original'
+            (source / 'safe/file.txt').write_bytes(content)
+            blob = hashlib.sha1(b'blob 8\0' + content).hexdigest()
+            child = 'a' * 40
+            forbidden = 'b' * 40
+            (build / 'CMakeCache.txt').write_text(f'CMAKE_HOME_DIRECTORY:INTERNAL={source}\n')
+            visited = []
+            def command(argv, **kwargs):
+                if argv[-2:] == ['rev-parse', 'HEAD']:
+                    return subprocess.CompletedProcess(argv, 0, stdout='c' * 40 + '\n')
+                self.assertEqual(argv[3:5], ['ls-tree', '-z'])
+                visited.append(argv[5])
+                if argv[5] == 'HEAD':
+                    raw = (f'040000 tree {child}\tsafe\0'
+                           f'040000 tree {forbidden}\tHaMmEr-data\0'
+                           f'040000 tree {forbidden}\tVLSI-data\0').encode()
+                elif argv[5] == child:
+                    raw = f'100644 blob {blob}\tfile.txt\0'.encode()
+                else:
+                    self.fail('descended into restricted tree')
+                return subprocess.CompletedProcess(argv, 0, stdout=raw)
+            with patch('atlas_backend.subprocess.run', side_effect=command):
+                result = atlas_backend._build_source(build)
+            self.assertEqual(visited, ['HEAD', child])
+            self.assertFalse(result['modified'])
+
     def test_manifest_tracks_working_bytes_and_missing_symlinks(self):
         import subprocess, tempfile
         with tempfile.TemporaryDirectory() as directory:

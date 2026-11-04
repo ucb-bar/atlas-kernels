@@ -95,10 +95,26 @@ def _build_source(build):
         head = subprocess.run(['git', '-C', source, 'rev-parse', 'HEAD'], capture_output=True, text=True)
         if head.returncode == 0:
             # Filter names before accessing working files, including through Git.
-            listing = subprocess.run(['git', '-C', source, 'ls-tree', '-rz', 'HEAD'],
-                                     capture_output=True, check=True).stdout
+            def tree_entries(tree, prefix=b''):
+                # Prune restricted names before descending into their Git trees.
+                listing = subprocess.run(['git', '-C', source, 'ls-tree', '-z', tree],
+                                         capture_output=True, check=True).stdout
+                for entry in listing.split(b'\0'):
+                    if not entry:
+                        continue
+                    metadata, name = entry.split(b'\t', 1)
+                    if any(word in os.fsdecode(name).lower() for word in RESTRICTED):
+                        continue
+                    mode, kind, blob = metadata.split()
+                    relative = prefix + name
+                    if kind == b'tree':
+                        yield from tree_entries(blob.decode(), relative + b'/')
+                    else:
+                        yield metadata + b'\t' + relative
+
+            listing = sorted(tree_entries('HEAD'), key=lambda entry: entry.split(b'\t', 1)[1])
             manifest, modified = hashlib.sha256(), False
-            for entry in listing.split(b'\0'):
+            for entry in listing:
                 if not entry:
                     continue
                 metadata, raw_path = entry.split(b'\t', 1)
