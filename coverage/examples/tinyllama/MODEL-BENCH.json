@@ -1,0 +1,2260 @@
+{
+ "schema": "atlas.model_bench.v1",
+ "model": "tinyllama",
+ "coverage": "coverage/coverage.json",
+ "coverage_sha256": "4abb075f1683e18d7e1591b408feaab8ac55652db0dc3a81282c3de56b6c17a5",
+ "coverage_status": "COMPLETE",
+ "workers": 8,
+ "command": "python /scratch/reednicolas/atlas-tmp/jobs/K2/FRESH/tmp/sources/atlas-kernels/coverage/bench_model.py --coverage /scratch/reednicolas/atlas-tmp/jobs/K2/FRESH/tmp/sources/atlas-kernels/coverage/coverage.json --model tinyllama --model-root /tmp/reednicolas-atlas/oct31/V2/A/npu-model --atlas-mlir-bin /scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin --out /scratch/reednicolas/atlas-tmp/jobs/K2/FRESH/out/benches/tinyllama --workers 8 --job-timeout 172800 --subset-after 172800 --max-cycles 2000000000 --max-instructions 500000000",
+ "launch_checks": [
+  [
+   "projection_panels",
+   840,
+   840
+  ],
+  [
+   "attention",
+   66,
+   66
+  ],
+  [
+   "rmsnorm",
+   132,
+   132
+  ]
+ ],
+ "unmapped": [],
+ "uncovered": [],
+ "notes": [
+  "Fully rerun at atlas-kernels `80c5f27d4bcded9c1ca7618a17ffcdbae2be7a39` and atlas-mlir `b8dca4e65459d24cb74a403569b46e8325c4c489`: 52 fresh functional/timed jobs, with no reuse. All 26 launch types have measured full-shape timing. FRESH receipts: `/scratch/reednicolas/atlas-tmp/jobs/K2/FRESH/out/benches/tinyllama/MODEL-BENCH.json` and `/scratch/reednicolas/atlas-tmp/jobs/K2/FRESH/out/results.json`. This report regeneration runs no simulations."
+ ],
+ "backend": {
+  "min_tier": "stream-verified",
+  "tools": {
+   "atlas-opt": {
+    "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-opt",
+    "sha256": "34eb2d6c654c192628e9c02dc49caff9fc6ec250ec80df7c7568c98061621189",
+    "version": "LLVM (http://llvm.org/): LLVM version 23.0.0git Optimized build with assertions."
+   },
+   "atlas-emit": {
+    "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-emit",
+    "sha256": "6d0a907400ba5b6248df12b8df8ac69bd2eff2fdaec781a3888a109e01fc8eeb",
+    "version": "usage: atlas-emit [--allow-untimed] [--map-json|--program-json] <flat-mlir-module>"
+   },
+   "source": {
+    "directory": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/src"
+   }
+  }
+ },
+ "npu_model": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+ "wall_seconds": 11100.0,
+ "launches": [
+  {
+   "key": "attention:{\"head_dim\":64,\"heads\":32,\"keys\":128,\"kv_heads\":4,\"mask\":\"causal\",\"output_fp8\":true,\"query_start\":0,\"rows\":128}",
+   "family": "attention",
+   "params": {
+    "rows": 128,
+    "keys": 128,
+    "heads": 32,
+    "kv_heads": 4,
+    "head_dim": 64,
+    "mask": "causal",
+    "output_fp8": true,
+    "query_start": 0
+   },
+   "count": 22,
+   "flops": 3033530368,
+   "modules": [
+    "model.layers.*.self_attn"
+   ],
+   "dtypes": [
+    "float32"
+   ],
+   "phases": [
+    "prefill"
+   ],
+   "shape": "128x128 32/4 d64 causal FP8 out",
+   "variant": "attention v2, 1 unique mask tiles",
+   "generator_words": 452,
+   "generator_command": "kernels/attention/gen.py --rows 128 --keys 128 --heads 32/4 --mask causal --q-exponent -6 --k-exponent -6 --v-exponent -6 --o-exponent -7 --query-start 0 --fp8",
+   "program_words": 452,
+   "instructions": 57853,
+   "functional_seconds": 100.6,
+   "timed_seconds": 322.3,
+   "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+   "numerics": "rtl",
+   "golden": null,
+   "bit_exact": null,
+   "full_extent_exact": null,
+   "padding_differences": null,
+   "padding_signed_zero_only": null,
+   "cosine": 0.9986866387310652,
+   "relative_error": 0.051304837058547485,
+   "max_abs_error": 0.23221254348754883,
+   "meta": {
+    "q_exponent": -6,
+    "k_exponent": -6,
+    "v_exponent": -6,
+    "o_exponent": -7
+   },
+   "backend": {
+    "tier": "stream-verified",
+    "words": 452,
+    "words_sha256": "1511d4fccaf3a7b5d8bbe356f1aab25937114094eaeb4ef9846648d0ac049699",
+    "stream": "pass",
+    "stream_diagnostics": [],
+    "timing": "reject",
+    "timing_diagnostics": [
+     "kernel.S:64:1: error: 'atlas.vstore' op WAW conflict with atlas.dma on channel 1, which may still be in flight; a delay cannot cover a DMA transfer, so add atlas.dma_wait first"
+    ],
+    "words_equal_assembler": true,
+    "min_tier": "stream-verified",
+    "tools": {
+     "atlas-opt": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-opt",
+      "sha256": "34eb2d6c654c192628e9c02dc49caff9fc6ec250ec80df7c7568c98061621189",
+      "version": "LLVM (http://llvm.org/): LLVM version 23.0.0git Optimized build with assertions."
+     },
+     "atlas-emit": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-emit",
+      "sha256": "6d0a907400ba5b6248df12b8df8ac69bd2eff2fdaec781a3888a109e01fc8eeb",
+      "version": "usage: atlas-emit [--allow-untimed] [--map-json|--program-json] <flat-mlir-module>"
+     },
+     "source": {
+      "directory": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/src"
+     }
+    }
+   },
+   "source_sha256": "eefcb4487ddb00232160f4b40775f124321930368f379c758e719656a107b40d",
+   "words_sha256": "1511d4fccaf3a7b5d8bbe356f1aab25937114094eaeb4ef9846648d0ac049699",
+   "arena_sha256": "0b19ba130b7338674fa9ce46b39bff36133c8338e673805b84cf387e8379f978",
+   "arena_bytes": 920224,
+   "reuse_proof": null,
+   "model_cycles": 1358729,
+   "cycles_source": "full launch",
+   "timed_output_equal": true,
+   "status": "ok",
+   "total_cycles": 29892038
+  },
+  {
+   "key": "attention:{\"head_dim\":64,\"heads\":32,\"keys\":129,\"kv_heads\":4,\"mask\":\"causal\",\"output_fp8\":true,\"query_start\":128,\"rows\":1}",
+   "family": "attention",
+   "params": {
+    "rows": 1,
+    "keys": 129,
+    "heads": 32,
+    "kv_heads": 4,
+    "head_dim": 64,
+    "mask": "causal",
+    "output_fp8": true,
+    "query_start": 128
+   },
+   "count": 22,
+   "flops": 35599168,
+   "modules": [
+    "model.layers.*.self_attn"
+   ],
+   "dtypes": [
+    "float32"
+   ],
+   "phases": [
+    "decode"
+   ],
+   "shape": "1x129 32/4 d64 causal FP8 out",
+   "variant": "attention v2 packed decode, 2 unique mask tiles",
+   "generator_words": 468,
+   "generator_command": "kernels/attention/gen.py --rows 1 --keys 129 --heads 32/4 --mask causal --q-exponent -7 --k-exponent -6 --v-exponent -6 --o-exponent -9 --query-start 128 --fp8",
+   "program_words": 468,
+   "instructions": 5660,
+   "functional_seconds": 10.4,
+   "timed_seconds": 32.6,
+   "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+   "numerics": "rtl",
+   "golden": null,
+   "bit_exact": null,
+   "full_extent_exact": null,
+   "padding_differences": null,
+   "padding_signed_zero_only": null,
+   "cosine": 0.9982271305673882,
+   "relative_error": 0.059560745797218866,
+   "max_abs_error": 0.0432887077331543,
+   "meta": {
+    "q_exponent": -7,
+    "k_exponent": -6,
+    "v_exponent": -6,
+    "o_exponent": -9
+   },
+   "backend": {
+    "tier": "stream-verified",
+    "words": 468,
+    "words_sha256": "addc39afe6606842069ae58789867b7b2b16020bf94b7d075804f39490cfb427",
+    "stream": "pass",
+    "stream_diagnostics": [],
+    "timing": "reject",
+    "timing_diagnostics": [
+     "kernel.S:64:1: error: 'atlas.vstore' op WAW conflict with atlas.dma on channel 1, which may still be in flight; a delay cannot cover a DMA transfer, so add atlas.dma_wait first"
+    ],
+    "words_equal_assembler": true,
+    "min_tier": "stream-verified",
+    "tools": {
+     "atlas-opt": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-opt",
+      "sha256": "34eb2d6c654c192628e9c02dc49caff9fc6ec250ec80df7c7568c98061621189",
+      "version": "LLVM (http://llvm.org/): LLVM version 23.0.0git Optimized build with assertions."
+     },
+     "atlas-emit": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-emit",
+      "sha256": "6d0a907400ba5b6248df12b8df8ac69bd2eff2fdaec781a3888a109e01fc8eeb",
+      "version": "usage: atlas-emit [--allow-untimed] [--map-json|--program-json] <flat-mlir-module>"
+     },
+     "source": {
+      "directory": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/src"
+     }
+    }
+   },
+   "source_sha256": "f9d7be54c10b4855d01c8321eee774f96917ea5cda412c635d4271970cce67e9",
+   "words_sha256": "addc39afe6606842069ae58789867b7b2b16020bf94b7d075804f39490cfb427",
+   "arena_sha256": "ecb69e117f5b4cc5a87259cd2366a010994f83cc7df475ee4ae8c882666350b1",
+   "arena_bytes": 250464,
+   "reuse_proof": null,
+   "model_cycles": 197542,
+   "cycles_source": "full launch",
+   "timed_output_equal": true,
+   "status": "ok",
+   "total_cycles": 4345924
+  },
+  {
+   "key": "attention:{\"head_dim\":64,\"heads\":32,\"keys\":130,\"kv_heads\":4,\"mask\":\"causal\",\"output_fp8\":true,\"query_start\":129,\"rows\":1}",
+   "family": "attention",
+   "params": {
+    "rows": 1,
+    "keys": 130,
+    "heads": 32,
+    "kv_heads": 4,
+    "head_dim": 64,
+    "mask": "causal",
+    "output_fp8": true,
+    "query_start": 129
+   },
+   "count": 22,
+   "flops": 35694208,
+   "modules": [
+    "model.layers.*.self_attn"
+   ],
+   "dtypes": [
+    "float32"
+   ],
+   "phases": [
+    "decode"
+   ],
+   "shape": "1x130 32/4 d64 causal FP8 out",
+   "variant": "attention v2 packed decode, 2 unique mask tiles",
+   "generator_words": 468,
+   "generator_command": "kernels/attention/gen.py --rows 1 --keys 130 --heads 32/4 --mask causal --q-exponent -6 --k-exponent -6 --v-exponent -6 --o-exponent -8 --query-start 129 --fp8",
+   "program_words": 468,
+   "instructions": 5660,
+   "functional_seconds": 11.6,
+   "timed_seconds": 34.3,
+   "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+   "numerics": "rtl",
+   "golden": null,
+   "bit_exact": null,
+   "full_extent_exact": null,
+   "padding_differences": null,
+   "padding_signed_zero_only": null,
+   "cosine": 0.99803428444137,
+   "relative_error": 0.06270014449596535,
+   "max_abs_error": 0.05006253719329834,
+   "meta": {
+    "q_exponent": -6,
+    "k_exponent": -6,
+    "v_exponent": -6,
+    "o_exponent": -8
+   },
+   "backend": {
+    "tier": "stream-verified",
+    "words": 468,
+    "words_sha256": "44b6c8fd644a3f6e29595f9d26d987e46dc5baebe8644322aa926aab38e9727f",
+    "stream": "pass",
+    "stream_diagnostics": [],
+    "timing": "reject",
+    "timing_diagnostics": [
+     "kernel.S:64:1: error: 'atlas.vstore' op WAW conflict with atlas.dma on channel 1, which may still be in flight; a delay cannot cover a DMA transfer, so add atlas.dma_wait first"
+    ],
+    "words_equal_assembler": true,
+    "min_tier": "stream-verified",
+    "tools": {
+     "atlas-opt": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-opt",
+      "sha256": "34eb2d6c654c192628e9c02dc49caff9fc6ec250ec80df7c7568c98061621189",
+      "version": "LLVM (http://llvm.org/): LLVM version 23.0.0git Optimized build with assertions."
+     },
+     "atlas-emit": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-emit",
+      "sha256": "6d0a907400ba5b6248df12b8df8ac69bd2eff2fdaec781a3888a109e01fc8eeb",
+      "version": "usage: atlas-emit [--allow-untimed] [--map-json|--program-json] <flat-mlir-module>"
+     },
+     "source": {
+      "directory": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/src"
+     }
+    }
+   },
+   "source_sha256": "e2979cac96eaab68112791381d3a220d290edae824fd0d9249fccd454671d223",
+   "words_sha256": "44b6c8fd644a3f6e29595f9d26d987e46dc5baebe8644322aa926aab38e9727f",
+   "arena_sha256": "0672e29ffee7927a27f384d82849883516b3e3b6ca848aaf1469b89868f82d39",
+   "arena_bytes": 250464,
+   "reuse_proof": null,
+   "model_cycles": 197542,
+   "cycles_source": "full launch",
+   "timed_output_equal": true,
+   "status": "ok",
+   "total_cycles": 4345924
+  },
+  {
+   "key": "epilogue:{\"consumer_width\":5632,\"k\":2048,\"logical_k\":2048,\"logical_n\":1536,\"m\":128,\"n\":1536,\"output\":\"fp8\",\"rows\":128,\"steps\":[\"mul\"]}",
+   "family": "epilogue",
+   "params": {
+    "m": 128,
+    "k": 2048,
+    "n": 1536,
+    "rows": 128,
+    "logical_k": 2048,
+    "logical_n": 1536,
+    "steps": [
+     "mul"
+    ],
+    "output": "fp8",
+    "consumer_width": 5632
+   },
+   "count": 22,
+   "flops": 17716740096,
+   "modules": [
+    "model.layers.*.mlp.up_proj"
+   ],
+   "dtypes": [
+    "bfloat16"
+   ],
+   "phases": [
+    "prefill"
+   ],
+   "shape": "128x2048x1536 mul FP8 out",
+   "variant": "tiny recipe + multiply epilogue, FP8 out",
+   "generator_words": 2245,
+   "generator_command": "kernels/epilogue/gen.py --shape 128x2048x1536 --steps mul --fp8 --rescale-exponent -18 --output-scale-exponent -5 --output-row-stride 180224",
+   "program_words": 2268,
+   "instructions": 164016,
+   "functional_seconds": 2079.1,
+   "timed_seconds": 3341.7,
+   "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+   "numerics": "rtl",
+   "golden": null,
+   "bit_exact": null,
+   "full_extent_exact": null,
+   "padding_differences": null,
+   "padding_signed_zero_only": null,
+   "cosine": 0.9975995593448769,
+   "relative_error": 0.06925318514290711,
+   "max_abs_error": 0.7755489349365234,
+   "meta": {
+    "a_scale": -6,
+    "w_scale": -12,
+    "output_scale": -5
+   },
+   "backend": {
+    "tier": "stream-verified",
+    "words": 2268,
+    "words_sha256": "dac86717e20cdea72b289aeccb0625e9cbdc2aee3a752bacf8304cc00ee3b155",
+    "stream": "pass",
+    "stream_diagnostics": [],
+    "timing": "reject",
+    "timing_diagnostics": [
+     "kernel.S:45:1: error: 'atlas.vload' op RAW conflict with atlas.dma on channel 1, which may still be in flight; a delay cannot cover a DMA transfer, so add atlas.dma_wait first"
+    ],
+    "words_equal_assembler": true,
+    "min_tier": "stream-verified",
+    "tools": {
+     "atlas-opt": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-opt",
+      "sha256": "34eb2d6c654c192628e9c02dc49caff9fc6ec250ec80df7c7568c98061621189",
+      "version": "LLVM (http://llvm.org/): LLVM version 23.0.0git Optimized build with assertions."
+     },
+     "atlas-emit": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-emit",
+      "sha256": "6d0a907400ba5b6248df12b8df8ac69bd2eff2fdaec781a3888a109e01fc8eeb",
+      "version": "usage: atlas-emit [--allow-untimed] [--map-json|--program-json] <flat-mlir-module>"
+     },
+     "source": {
+      "directory": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/src"
+     }
+    }
+   },
+   "source_sha256": "efc30293fe6fc25b8b5a0bc28f6bcf072e85d1dab444a3590029a1cbb371a977",
+   "words_sha256": "dac86717e20cdea72b289aeccb0625e9cbdc2aee3a752bacf8304cc00ee3b155",
+   "arena_sha256": "d5279936cad7e2eab562e604295407aa42ddd9c5292e13c232f5196e40f76386",
+   "arena_bytes": 4391424,
+   "reuse_proof": null,
+   "model_cycles": 5280893,
+   "cycles_source": "full launch",
+   "timed_output_equal": true,
+   "status": "ok",
+   "total_cycles": 116179646
+  },
+  {
+   "key": "epilogue:{\"consumer_width\":5632,\"k\":2048,\"logical_k\":2048,\"logical_n\":1536,\"m\":32,\"n\":1536,\"output\":\"fp8\",\"rows\":1,\"steps\":[\"mul\"]}",
+   "family": "epilogue",
+   "params": {
+    "m": 32,
+    "k": 2048,
+    "n": 1536,
+    "rows": 1,
+    "logical_k": 2048,
+    "logical_n": 1536,
+    "steps": [
+     "mul"
+    ],
+    "output": "fp8",
+    "consumer_width": 5632
+   },
+   "count": 44,
+   "flops": 276824064,
+   "modules": [
+    "model.layers.*.mlp.up_proj"
+   ],
+   "dtypes": [
+    "bfloat16"
+   ],
+   "phases": [
+    "decode"
+   ],
+   "shape": "32x2048x1536 (logical 1x2048x1536) mul FP8 out",
+   "variant": "tiny_breadth recipe + multiply epilogue, FP8 out",
+   "generator_words": 142,
+   "generator_command": "kernels/epilogue/gen.py --shape 32x2048x1536 --steps mul --fp8 --rescale-exponent -19 --output-scale-exponent -6 --output-row-stride 180224",
+   "program_words": 153,
+   "instructions": 81898,
+   "functional_seconds": 133.4,
+   "timed_seconds": 436.3,
+   "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+   "numerics": "rtl",
+   "golden": null,
+   "bit_exact": null,
+   "full_extent_exact": null,
+   "padding_differences": null,
+   "padding_signed_zero_only": null,
+   "cosine": 0.9977855916169563,
+   "relative_error": 0.06654751559073831,
+   "max_abs_error": 0.3433380126953125,
+   "meta": {
+    "a_scale": -7,
+    "w_scale": -12,
+    "output_scale": -6
+   },
+   "backend": {
+    "tier": "stream-verified",
+    "words": 153,
+    "words_sha256": "cd3ee6ba1f7caf5fd9b4575c86b3ef062d449f17074da6bdfb979091fbb2d6a8",
+    "stream": "pass",
+    "stream_diagnostics": [],
+    "timing": "reject",
+    "timing_diagnostics": [
+     "kernel.S:50:1: error: 'atlas.dma' op may still be in flight when its block ends; timing requires DMA completion before a block boundary, so add atlas.dma_wait in this block"
+    ],
+    "words_equal_assembler": true,
+    "min_tier": "stream-verified",
+    "tools": {
+     "atlas-opt": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-opt",
+      "sha256": "34eb2d6c654c192628e9c02dc49caff9fc6ec250ec80df7c7568c98061621189",
+      "version": "LLVM (http://llvm.org/): LLVM version 23.0.0git Optimized build with assertions."
+     },
+     "atlas-emit": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-emit",
+      "sha256": "6d0a907400ba5b6248df12b8df8ac69bd2eff2fdaec781a3888a109e01fc8eeb",
+      "version": "usage: atlas-emit [--allow-untimed] [--map-json|--program-json] <flat-mlir-module>"
+     },
+     "source": {
+      "directory": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/src"
+     }
+    }
+   },
+   "source_sha256": "70717604818601ad350e4c329a2ffb04074113bffcbdf624cf58b6bad6ed77a4",
+   "words_sha256": "cd3ee6ba1f7caf5fd9b4575c86b3ef062d449f17074da6bdfb979091fbb2d6a8",
+   "arena_sha256": "6d09ff0aa9aebb2c09e9720557c7ecdd1cd2737e21fbe4e872dd608256dace77",
+   "arena_bytes": 3359232,
+   "reuse_proof": null,
+   "model_cycles": 2577433,
+   "cycles_source": "full launch",
+   "timed_output_equal": true,
+   "status": "ok",
+   "total_cycles": 113407052
+  },
+  {
+   "key": "epilogue:{\"consumer_width\":5632,\"k\":2048,\"logical_k\":2048,\"logical_n\":2048,\"m\":128,\"n\":2048,\"output\":\"fp8\",\"rows\":128,\"steps\":[\"mul\"]}",
+   "family": "epilogue",
+   "params": {
+    "m": 128,
+    "k": 2048,
+    "n": 2048,
+    "rows": 128,
+    "logical_k": 2048,
+    "logical_n": 2048,
+    "steps": [
+     "mul"
+    ],
+    "output": "fp8",
+    "consumer_width": 5632
+   },
+   "count": 44,
+   "flops": 47244640256,
+   "modules": [
+    "model.layers.*.mlp.up_proj"
+   ],
+   "dtypes": [
+    "bfloat16"
+   ],
+   "phases": [
+    "prefill"
+   ],
+   "shape": "128x2048x2048 mul FP8 out",
+   "variant": "tiny recipe + multiply epilogue, FP8 out",
+   "generator_words": 2293,
+   "generator_command": "kernels/epilogue/gen.py --shape 128x2048x2048 --steps mul --fp8 --rescale-exponent -18 --output-scale-exponent -5 --output-row-stride 180224",
+   "program_words": 2316,
+   "instructions": 220816,
+   "functional_seconds": 3053.0,
+   "timed_seconds": 4329.2,
+   "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+   "numerics": "rtl",
+   "golden": null,
+   "bit_exact": null,
+   "full_extent_exact": null,
+   "padding_differences": null,
+   "padding_signed_zero_only": null,
+   "cosine": 0.9976425616869558,
+   "relative_error": 0.0686255108212441,
+   "max_abs_error": 0.7586045265197754,
+   "meta": {
+    "a_scale": -6,
+    "w_scale": -12,
+    "output_scale": -5
+   },
+   "backend": {
+    "tier": "stream-verified",
+    "words": 2316,
+    "words_sha256": "caef0d4c284b7a21570b462e0c91d0f74b6363e72232372b02b68e5ec2f8df28",
+    "stream": "pass",
+    "stream_diagnostics": [],
+    "timing": "reject",
+    "timing_diagnostics": [
+     "kernel.S:45:1: error: 'atlas.vload' op RAW conflict with atlas.dma on channel 1, which may still be in flight; a delay cannot cover a DMA transfer, so add atlas.dma_wait first"
+    ],
+    "words_equal_assembler": true,
+    "min_tier": "stream-verified",
+    "tools": {
+     "atlas-opt": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-opt",
+      "sha256": "34eb2d6c654c192628e9c02dc49caff9fc6ec250ec80df7c7568c98061621189",
+      "version": "LLVM (http://llvm.org/): LLVM version 23.0.0git Optimized build with assertions."
+     },
+     "atlas-emit": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-emit",
+      "sha256": "6d0a907400ba5b6248df12b8df8ac69bd2eff2fdaec781a3888a109e01fc8eeb",
+      "version": "usage: atlas-emit [--allow-untimed] [--map-json|--program-json] <flat-mlir-module>"
+     },
+     "source": {
+      "directory": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/src"
+     }
+    }
+   },
+   "source_sha256": "cf1d63e7f8134b87f3c2ff93301ef53ee495f5c9755d55c1965fa5d0c17d6995",
+   "words_sha256": "caef0d4c284b7a21570b462e0c91d0f74b6363e72232372b02b68e5ec2f8df28",
+   "arena_sha256": "e75ff02986d1a4115d0f90d5721d617152a5b8255ec434f58b52040b44b85727",
+   "arena_bytes": 5587456,
+   "reuse_proof": null,
+   "model_cycles": 6977261,
+   "cycles_source": "full launch",
+   "timed_output_equal": true,
+   "status": "ok",
+   "total_cycles": 306999484
+  },
+  {
+   "key": "epilogue:{\"consumer_width\":5632,\"k\":2048,\"logical_k\":2048,\"logical_n\":2048,\"m\":32,\"n\":2048,\"output\":\"fp8\",\"rows\":1,\"steps\":[\"mul\"]}",
+   "family": "epilogue",
+   "params": {
+    "m": 32,
+    "k": 2048,
+    "n": 2048,
+    "rows": 1,
+    "logical_k": 2048,
+    "logical_n": 2048,
+    "steps": [
+     "mul"
+    ],
+    "output": "fp8",
+    "consumer_width": 5632
+   },
+   "count": 88,
+   "flops": 738197504,
+   "modules": [
+    "model.layers.*.mlp.up_proj"
+   ],
+   "dtypes": [
+    "bfloat16"
+   ],
+   "phases": [
+    "decode"
+   ],
+   "shape": "32x2048x2048 (logical 1x2048x2048) mul FP8 out",
+   "variant": "tiny_breadth recipe + multiply epilogue, FP8 out",
+   "generator_words": 142,
+   "generator_command": "kernels/epilogue/gen.py --shape 32x2048x2048 --steps mul --fp8 --rescale-exponent -18 --output-scale-exponent -5 --output-row-stride 180224",
+   "program_words": 153,
+   "instructions": 109130,
+   "functional_seconds": 170.9,
+   "timed_seconds": 639.6,
+   "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+   "numerics": "rtl",
+   "golden": null,
+   "bit_exact": null,
+   "full_extent_exact": null,
+   "padding_differences": null,
+   "padding_signed_zero_only": null,
+   "cosine": 0.9976423771769404,
+   "relative_error": 0.06896395152874998,
+   "max_abs_error": 0.4323310852050781,
+   "meta": {
+    "a_scale": -6,
+    "w_scale": -12,
+    "output_scale": -5
+   },
+   "backend": {
+    "tier": "stream-verified",
+    "words": 153,
+    "words_sha256": "e183111c18975f866d5a64b9c58fe582138277841c2814bbe81655499de1a598",
+    "stream": "pass",
+    "stream_diagnostics": [],
+    "timing": "reject",
+    "timing_diagnostics": [
+     "kernel.S:50:1: error: 'atlas.dma' op may still be in flight when its block ends; timing requires DMA completion before a block boundary, so add atlas.dma_wait in this block"
+    ],
+    "words_equal_assembler": true,
+    "min_tier": "stream-verified",
+    "tools": {
+     "atlas-opt": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-opt",
+      "sha256": "34eb2d6c654c192628e9c02dc49caff9fc6ec250ec80df7c7568c98061621189",
+      "version": "LLVM (http://llvm.org/): LLVM version 23.0.0git Optimized build with assertions."
+     },
+     "atlas-emit": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-emit",
+      "sha256": "6d0a907400ba5b6248df12b8df8ac69bd2eff2fdaec781a3888a109e01fc8eeb",
+      "version": "usage: atlas-emit [--allow-untimed] [--map-json|--program-json] <flat-mlir-module>"
+     },
+     "source": {
+      "directory": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/src"
+     }
+    }
+   },
+   "source_sha256": "72069e5f841c8610759e2ae333bcc4c8aa2f43732b7b9cfcaf72982de625370d",
+   "words_sha256": "e183111c18975f866d5a64b9c58fe582138277841c2814bbe81655499de1a598",
+   "arena_sha256": "91ed1356749ca81ccc95857b7eb4a452c535d5d127dec63f7f34df5ed2cb8520",
+   "arena_bytes": 4456960,
+   "reuse_proof": null,
+   "model_cycles": 3420329,
+   "cycles_source": "full launch",
+   "timed_output_equal": true,
+   "status": "ok",
+   "total_cycles": 300988952
+  },
+  {
+   "key": "epilogue:{\"k\":2048,\"logical_k\":2048,\"logical_n\":1536,\"m\":128,\"n\":1536,\"output\":\"bf16\",\"rows\":128,\"steps\":[\"silu\"]}",
+   "family": "epilogue",
+   "params": {
+    "m": 128,
+    "k": 2048,
+    "n": 1536,
+    "rows": 128,
+    "logical_k": 2048,
+    "logical_n": 1536,
+    "steps": [
+     "silu"
+    ],
+    "output": "bf16"
+   },
+   "count": 22,
+   "flops": 17716740096,
+   "modules": [
+    "model.layers.*.mlp.gate_proj"
+   ],
+   "dtypes": [
+    "bfloat16"
+   ],
+   "phases": [
+    "prefill"
+   ],
+   "shape": "128x2048x1536 silu",
+   "variant": "tiny recipe + SiLU epilogue",
+   "generator_words": 2105,
+   "generator_command": "kernels/epilogue/gen.py --shape 128x2048x1536 --steps silu --rescale-exponent -18",
+   "program_words": 2120,
+   "instructions": 156912,
+   "functional_seconds": 2747.3,
+   "timed_seconds": 3544.6,
+   "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+   "numerics": "rtl",
+   "golden": null,
+   "bit_exact": null,
+   "full_extent_exact": null,
+   "padding_differences": null,
+   "padding_signed_zero_only": null,
+   "cosine": 0.9974799324636129,
+   "relative_error": 0.07095059868437292,
+   "max_abs_error": 0.5414988994598389,
+   "meta": {
+    "a_scale": -6,
+    "w_scale": -12
+   },
+   "backend": {
+    "tier": "stream-verified",
+    "words": 2120,
+    "words_sha256": "2c220c2db31826d56565659c86db108610de1dde7384fbf68de872ba97501b0d",
+    "stream": "pass",
+    "stream_diagnostics": [],
+    "timing": "reject",
+    "timing_diagnostics": [
+     "kernel.S:45:1: error: 'atlas.vload' op RAW conflict with atlas.dma on channel 1, which may still be in flight; a delay cannot cover a DMA transfer, so add atlas.dma_wait first"
+    ],
+    "words_equal_assembler": true,
+    "min_tier": "stream-verified",
+    "tools": {
+     "atlas-opt": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-opt",
+      "sha256": "34eb2d6c654c192628e9c02dc49caff9fc6ec250ec80df7c7568c98061621189",
+      "version": "LLVM (http://llvm.org/): LLVM version 23.0.0git Optimized build with assertions."
+     },
+     "atlas-emit": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-emit",
+      "sha256": "6d0a907400ba5b6248df12b8df8ac69bd2eff2fdaec781a3888a109e01fc8eeb",
+      "version": "usage: atlas-emit [--allow-untimed] [--map-json|--program-json] <flat-mlir-module>"
+     },
+     "source": {
+      "directory": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/src"
+     }
+    }
+   },
+   "source_sha256": "cbe3138a50cc5d1d703b79b8877179b64bd78987a47b88fbc51a68c13eb7c153",
+   "words_sha256": "2c220c2db31826d56565659c86db108610de1dde7384fbf68de872ba97501b0d",
+   "arena_sha256": "af1af7ecde4012aa62919679a94246e1b8059a395ca1e4f960bd8d8e957a7014",
+   "arena_bytes": 3801600,
+   "reuse_proof": null,
+   "model_cycles": 5144285,
+   "cycles_source": "full launch",
+   "timed_output_equal": true,
+   "status": "ok",
+   "total_cycles": 113174270
+  },
+  {
+   "key": "epilogue:{\"k\":2048,\"logical_k\":2048,\"logical_n\":1536,\"m\":32,\"n\":1536,\"output\":\"bf16\",\"rows\":1,\"steps\":[\"silu\"]}",
+   "family": "epilogue",
+   "params": {
+    "m": 32,
+    "k": 2048,
+    "n": 1536,
+    "rows": 1,
+    "logical_k": 2048,
+    "logical_n": 1536,
+    "steps": [
+     "silu"
+    ],
+    "output": "bf16"
+   },
+   "count": 44,
+   "flops": 276824064,
+   "modules": [
+    "model.layers.*.mlp.gate_proj"
+   ],
+   "dtypes": [
+    "bfloat16"
+   ],
+   "phases": [
+    "decode"
+   ],
+   "shape": "32x2048x1536 (logical 1x2048x1536) silu",
+   "variant": "tiny_breadth recipe + SiLU epilogue",
+   "generator_words": 125,
+   "generator_command": "kernels/epilogue/gen.py --shape 32x2048x1536 --steps silu --rescale-exponent -18",
+   "program_words": 134,
+   "instructions": 80986,
+   "functional_seconds": 143.6,
+   "timed_seconds": 579.4,
+   "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+   "numerics": "rtl",
+   "golden": null,
+   "bit_exact": null,
+   "full_extent_exact": null,
+   "padding_differences": null,
+   "padding_signed_zero_only": null,
+   "cosine": 0.9978716342794381,
+   "relative_error": 0.0652459365611657,
+   "max_abs_error": 0.22938311100006104,
+   "meta": {
+    "a_scale": -6,
+    "w_scale": -12
+   },
+   "backend": {
+    "tier": "stream-verified",
+    "words": 134,
+    "words_sha256": "2899bdb731219b4f6e677db677facdadeb03712a563accd8cbfb15cfbff51ed1",
+    "stream": "pass",
+    "stream_diagnostics": [],
+    "timing": "reject",
+    "timing_diagnostics": [
+     "kernel.S:50:1: error: 'atlas.dma' op may still be in flight when its block ends; timing requires DMA completion before a block boundary, so add atlas.dma_wait in this block"
+    ],
+    "words_equal_assembler": true,
+    "min_tier": "stream-verified",
+    "tools": {
+     "atlas-opt": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-opt",
+      "sha256": "34eb2d6c654c192628e9c02dc49caff9fc6ec250ec80df7c7568c98061621189",
+      "version": "LLVM (http://llvm.org/): LLVM version 23.0.0git Optimized build with assertions."
+     },
+     "atlas-emit": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-emit",
+      "sha256": "6d0a907400ba5b6248df12b8df8ac69bd2eff2fdaec781a3888a109e01fc8eeb",
+      "version": "usage: atlas-emit [--allow-untimed] [--map-json|--program-json] <flat-mlir-module>"
+     },
+     "source": {
+      "directory": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/src"
+     }
+    }
+   },
+   "source_sha256": "34b51ea9c0ad8685790d6708a10dbc3b30f75be5b62a3aabc96d97a35e61ffd8",
+   "words_sha256": "2899bdb731219b4f6e677db677facdadeb03712a563accd8cbfb15cfbff51ed1",
+   "arena_sha256": "6433092a95e814f2d77e610826ed2cfe0688fbcfc078cc5bc07eca59d608ca29",
+   "arena_bytes": 3310080,
+   "reuse_proof": null,
+   "model_cycles": 2544361,
+   "cycles_source": "full launch",
+   "timed_output_equal": true,
+   "status": "ok",
+   "total_cycles": 111951884
+  },
+  {
+   "key": "epilogue:{\"k\":2048,\"logical_k\":2048,\"logical_n\":2048,\"m\":128,\"n\":2048,\"output\":\"bf16\",\"rows\":128,\"steps\":[\"silu\"]}",
+   "family": "epilogue",
+   "params": {
+    "m": 128,
+    "k": 2048,
+    "n": 2048,
+    "rows": 128,
+    "logical_k": 2048,
+    "logical_n": 2048,
+    "steps": [
+     "silu"
+    ],
+    "output": "bf16"
+   },
+   "count": 44,
+   "flops": 47244640256,
+   "modules": [
+    "model.layers.*.mlp.gate_proj"
+   ],
+   "dtypes": [
+    "bfloat16"
+   ],
+   "phases": [
+    "prefill"
+   ],
+   "shape": "128x2048x2048 silu",
+   "variant": "tiny recipe + SiLU epilogue",
+   "generator_words": 2105,
+   "generator_command": "kernels/epilogue/gen.py --shape 128x2048x2048 --steps silu --rescale-exponent -18",
+   "program_words": 2120,
+   "instructions": 208272,
+   "functional_seconds": 3783.9,
+   "timed_seconds": 4472.1,
+   "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+   "numerics": "rtl",
+   "golden": null,
+   "bit_exact": null,
+   "full_extent_exact": null,
+   "padding_differences": null,
+   "padding_signed_zero_only": null,
+   "cosine": 0.9975047824614739,
+   "relative_error": 0.07060007979824175,
+   "max_abs_error": 0.5248920917510986,
+   "meta": {
+    "a_scale": -6,
+    "w_scale": -12
+   },
+   "backend": {
+    "tier": "stream-verified",
+    "words": 2120,
+    "words_sha256": "476a9e9d7bfcd72881ba9776e98bc4adc401f8fc89a785192fb1ff3077755f06",
+    "stream": "pass",
+    "stream_diagnostics": [],
+    "timing": "reject",
+    "timing_diagnostics": [
+     "kernel.S:45:1: error: 'atlas.vload' op RAW conflict with atlas.dma on channel 1, which may still be in flight; a delay cannot cover a DMA transfer, so add atlas.dma_wait first"
+    ],
+    "words_equal_assembler": true,
+    "min_tier": "stream-verified",
+    "tools": {
+     "atlas-opt": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-opt",
+      "sha256": "34eb2d6c654c192628e9c02dc49caff9fc6ec250ec80df7c7568c98061621189",
+      "version": "LLVM (http://llvm.org/): LLVM version 23.0.0git Optimized build with assertions."
+     },
+     "atlas-emit": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-emit",
+      "sha256": "6d0a907400ba5b6248df12b8df8ac69bd2eff2fdaec781a3888a109e01fc8eeb",
+      "version": "usage: atlas-emit [--allow-untimed] [--map-json|--program-json] <flat-mlir-module>"
+     },
+     "source": {
+      "directory": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/src"
+     }
+    }
+   },
+   "source_sha256": "141ec7d781600d2db45b7360ebf9156f15b8faaca77b94b926eb001a6f2f233b",
+   "words_sha256": "476a9e9d7bfcd72881ba9776e98bc4adc401f8fc89a785192fb1ff3077755f06",
+   "arena_sha256": "6947013e61a59d3fccda1548b65bb13b3eca8fe88a179dad105f0299acb1a452",
+   "arena_bytes": 4981248,
+   "reuse_proof": null,
+   "model_cycles": 6792045,
+   "cycles_source": "full launch",
+   "timed_output_equal": true,
+   "status": "ok",
+   "total_cycles": 298849980
+  },
+  {
+   "key": "epilogue:{\"k\":2048,\"logical_k\":2048,\"logical_n\":2048,\"m\":32,\"n\":2048,\"output\":\"bf16\",\"rows\":1,\"steps\":[\"silu\"]}",
+   "family": "epilogue",
+   "params": {
+    "m": 32,
+    "k": 2048,
+    "n": 2048,
+    "rows": 1,
+    "logical_k": 2048,
+    "logical_n": 2048,
+    "steps": [
+     "silu"
+    ],
+    "output": "bf16"
+   },
+   "count": 88,
+   "flops": 738197504,
+   "modules": [
+    "model.layers.*.mlp.gate_proj"
+   ],
+   "dtypes": [
+    "bfloat16"
+   ],
+   "phases": [
+    "decode"
+   ],
+   "shape": "32x2048x2048 (logical 1x2048x2048) silu",
+   "variant": "tiny_breadth recipe + SiLU epilogue",
+   "generator_words": 125,
+   "generator_command": "kernels/epilogue/gen.py --shape 32x2048x2048 --steps silu --rescale-exponent -17",
+   "program_words": 134,
+   "instructions": 107914,
+   "functional_seconds": 391.3,
+   "timed_seconds": 1170.6,
+   "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+   "numerics": "rtl",
+   "golden": null,
+   "bit_exact": null,
+   "full_extent_exact": null,
+   "padding_differences": null,
+   "padding_signed_zero_only": null,
+   "cosine": 0.9974571872994246,
+   "relative_error": 0.07136446603750403,
+   "max_abs_error": 0.35996389389038086,
+   "meta": {
+    "a_scale": -6,
+    "w_scale": -11
+   },
+   "backend": {
+    "tier": "stream-verified",
+    "words": 134,
+    "words_sha256": "6482a2821ce53ca1970804f05d0fdb4866a568894bd22c471404aa1b5bfa2510",
+    "stream": "pass",
+    "stream_diagnostics": [],
+    "timing": "reject",
+    "timing_diagnostics": [
+     "kernel.S:50:1: error: 'atlas.dma' op may still be in flight when its block ends; timing requires DMA completion before a block boundary, so add atlas.dma_wait in this block"
+    ],
+    "words_equal_assembler": true,
+    "min_tier": "stream-verified",
+    "tools": {
+     "atlas-opt": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-opt",
+      "sha256": "34eb2d6c654c192628e9c02dc49caff9fc6ec250ec80df7c7568c98061621189",
+      "version": "LLVM (http://llvm.org/): LLVM version 23.0.0git Optimized build with assertions."
+     },
+     "atlas-emit": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-emit",
+      "sha256": "6d0a907400ba5b6248df12b8df8ac69bd2eff2fdaec781a3888a109e01fc8eeb",
+      "version": "usage: atlas-emit [--allow-untimed] [--map-json|--program-json] <flat-mlir-module>"
+     },
+     "source": {
+      "directory": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/src"
+     }
+    }
+   },
+   "source_sha256": "e1bdb3c122465bb1cacfdd5fe40c287a4e75183b7c00b035d68f21f13e8da92c",
+   "words_sha256": "6482a2821ce53ca1970804f05d0fdb4866a568894bd22c471404aa1b5bfa2510",
+   "arena_sha256": "ab3fb6b1d9d62785194d3073b8ed3e5092b358ee6c4c9df4259914ef3c8461b8",
+   "arena_bytes": 4391424,
+   "reuse_proof": null,
+   "model_cycles": 3376233,
+   "cycles_source": "full launch",
+   "timed_output_equal": true,
+   "status": "ok",
+   "total_cycles": 297108504
+  },
+  {
+   "key": "projection_gemm:{\"k\":2048,\"logical_k\":2048,\"logical_n\":1280,\"m\":128,\"n\":1280,\"rows\":128}",
+   "family": "projection_gemm",
+   "params": {
+    "m": 128,
+    "k": 2048,
+    "n": 1280,
+    "rows": 128,
+    "logical_k": 2048,
+    "logical_n": 1280
+   },
+   "count": 1,
+   "flops": 671088640,
+   "modules": [
+    "lm_head"
+   ],
+   "dtypes": [
+    "bfloat16"
+   ],
+   "phases": [
+    "prefill"
+   ],
+   "shape": "128x2048x1280",
+   "variant": "tiny recipe",
+   "generator_words": 2033,
+   "generator_command": "kernels/projection_gemm/gen.py --shape 128x2048x1280 --rescale-exponent -18 --traffic-reuse",
+   "program_words": 2048,
+   "instructions": 128352,
+   "functional_seconds": 1783.9,
+   "timed_seconds": 2516.5,
+   "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+   "numerics": "rtl",
+   "golden": "ordered_matmul",
+   "bit_exact": true,
+   "full_extent_exact": true,
+   "padding_differences": 0,
+   "padding_signed_zero_only": null,
+   "cosine": 0.9979618162586141,
+   "relative_error": 0.06381516852831197,
+   "max_abs_error": 0.5295467376708984,
+   "meta": {
+    "a_scale": -6,
+    "w_scale": -12
+   },
+   "backend": {
+    "tier": "stream-verified",
+    "words": 2048,
+    "words_sha256": "92c9480ea1ab6c660549e6a08668d85ac3c3513dcd9d31359faa521eb284d520",
+    "stream": "pass",
+    "stream_diagnostics": [],
+    "timing": "reject",
+    "timing_diagnostics": [
+     "kernel.S:45:1: error: 'atlas.vload' op RAW conflict with atlas.dma on channel 1, which may still be in flight; a delay cannot cover a DMA transfer, so add atlas.dma_wait first"
+    ],
+    "words_equal_assembler": true,
+    "min_tier": "stream-verified",
+    "tools": {
+     "atlas-opt": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-opt",
+      "sha256": "34eb2d6c654c192628e9c02dc49caff9fc6ec250ec80df7c7568c98061621189",
+      "version": "LLVM (http://llvm.org/): LLVM version 23.0.0git Optimized build with assertions."
+     },
+     "atlas-emit": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-emit",
+      "sha256": "6d0a907400ba5b6248df12b8df8ac69bd2eff2fdaec781a3888a109e01fc8eeb",
+      "version": "usage: atlas-emit [--allow-untimed] [--map-json|--program-json] <flat-mlir-module>"
+     },
+     "source": {
+      "directory": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/src"
+     }
+    }
+   },
+   "source_sha256": "2b2e6af0127c26c84503a41a5e68c4b60b8079d90c15c5a0945e0eed26483057",
+   "words_sha256": "92c9480ea1ab6c660549e6a08668d85ac3c3513dcd9d31359faa521eb284d520",
+   "arena_sha256": "6743a161391eaf11fb87f4f70135dde035312858ebff73c1a9a3cbdb3a3e3c98",
+   "arena_bytes": 3211776,
+   "reuse_proof": null,
+   "model_cycles": 4222485,
+   "cycles_source": "full launch",
+   "timed_output_equal": true,
+   "status": "ok",
+   "total_cycles": 4222485
+  },
+  {
+   "key": "projection_gemm:{\"k\":2048,\"logical_k\":2048,\"logical_n\":1280,\"m\":32,\"n\":1280,\"rows\":1}",
+   "family": "projection_gemm",
+   "params": {
+    "m": 32,
+    "k": 2048,
+    "n": 1280,
+    "rows": 1,
+    "logical_k": 2048,
+    "logical_n": 1280
+   },
+   "count": 2,
+   "flops": 10485760,
+   "modules": [
+    "lm_head"
+   ],
+   "dtypes": [
+    "bfloat16"
+   ],
+   "phases": [
+    "decode"
+   ],
+   "shape": "32x2048x1280 (logical 1x2048x1280)",
+   "variant": "tiny_breadth recipe",
+   "generator_words": 107,
+   "generator_command": "kernels/projection_gemm/gen.py --shape 32x2048x1280 --rescale-exponent -18 --traffic-reuse",
+   "program_words": 116,
+   "instructions": 66802,
+   "functional_seconds": 155.9,
+   "timed_seconds": 653.1,
+   "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+   "numerics": "rtl",
+   "golden": "ordered_matmul",
+   "bit_exact": true,
+   "full_extent_exact": true,
+   "padding_differences": 0,
+   "padding_signed_zero_only": null,
+   "cosine": 0.9980901828216765,
+   "relative_error": 0.061810346957486106,
+   "max_abs_error": 0.3038334846496582,
+   "meta": {
+    "a_scale": -6,
+    "w_scale": -12
+   },
+   "backend": {
+    "tier": "stream-verified",
+    "words": 116,
+    "words_sha256": "43defb147c5d2ee647adf16c1b8de9b21798686f4c4c9e635b6656adacc0600b",
+    "stream": "pass",
+    "stream_diagnostics": [],
+    "timing": "reject",
+    "timing_diagnostics": [
+     "kernel.S:50:1: error: 'atlas.dma' op may still be in flight when its block ends; timing requires DMA completion before a block boundary, so add atlas.dma_wait in this block"
+    ],
+    "words_equal_assembler": true,
+    "min_tier": "stream-verified",
+    "tools": {
+     "atlas-opt": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-opt",
+      "sha256": "34eb2d6c654c192628e9c02dc49caff9fc6ec250ec80df7c7568c98061621189",
+      "version": "LLVM (http://llvm.org/): LLVM version 23.0.0git Optimized build with assertions."
+     },
+     "atlas-emit": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-emit",
+      "sha256": "6d0a907400ba5b6248df12b8df8ac69bd2eff2fdaec781a3888a109e01fc8eeb",
+      "version": "usage: atlas-emit [--allow-untimed] [--map-json|--program-json] <flat-mlir-module>"
+     },
+     "source": {
+      "directory": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/src"
+     }
+    }
+   },
+   "source_sha256": "5150e6c7f5289fc149a96ae3a82d7475d0d367cb6b19183db4c0e40759d8af6c",
+   "words_sha256": "43defb147c5d2ee647adf16c1b8de9b21798686f4c4c9e635b6656adacc0600b",
+   "arena_sha256": "407a870f63f0d4bd53bd064c0c23afbe72f43d04d5be761bb18c4aefd5a045a3",
+   "arena_bytes": 2769408,
+   "reuse_proof": null,
+   "model_cycles": 2103945,
+   "cycles_source": "full launch",
+   "timed_output_equal": true,
+   "status": "ok",
+   "total_cycles": 4207890
+  },
+  {
+   "key": "projection_gemm:{\"k\":2048,\"logical_k\":2048,\"logical_n\":2048,\"m\":128,\"n\":2048,\"rows\":128}",
+   "family": "projection_gemm",
+   "params": {
+    "m": 128,
+    "k": 2048,
+    "n": 2048,
+    "rows": 128,
+    "logical_k": 2048,
+    "logical_n": 2048
+   },
+   "count": 15,
+   "flops": 16106127360,
+   "modules": [
+    "lm_head"
+   ],
+   "dtypes": [
+    "bfloat16"
+   ],
+   "phases": [
+    "prefill"
+   ],
+   "shape": "128x2048x2048",
+   "variant": "tiny recipe",
+   "generator_words": 2033,
+   "generator_command": "kernels/projection_gemm/gen.py --shape 128x2048x2048 --rescale-exponent -18 --traffic-reuse",
+   "program_words": 2048,
+   "instructions": 203664,
+   "functional_seconds": 2665.6,
+   "timed_seconds": 3628.2,
+   "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+   "numerics": "rtl",
+   "golden": "ordered_matmul",
+   "bit_exact": true,
+   "full_extent_exact": true,
+   "padding_differences": 0,
+   "padding_signed_zero_only": null,
+   "cosine": 0.9979454816794774,
+   "relative_error": 0.06406933429115513,
+   "max_abs_error": 0.4522695541381836,
+   "meta": {
+    "a_scale": -6,
+    "w_scale": -12
+   },
+   "backend": {
+    "tier": "stream-verified",
+    "words": 2048,
+    "words_sha256": "05ebac3561b1ff48eef62410050c0ed71bf09f085d924f2efb9e94ea49790b39",
+    "stream": "pass",
+    "stream_diagnostics": [],
+    "timing": "reject",
+    "timing_diagnostics": [
+     "kernel.S:45:1: error: 'atlas.vload' op RAW conflict with atlas.dma on channel 1, which may still be in flight; a delay cannot cover a DMA transfer, so add atlas.dma_wait first"
+    ],
+    "words_equal_assembler": true,
+    "min_tier": "stream-verified",
+    "tools": {
+     "atlas-opt": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-opt",
+      "sha256": "34eb2d6c654c192628e9c02dc49caff9fc6ec250ec80df7c7568c98061621189",
+      "version": "LLVM (http://llvm.org/): LLVM version 23.0.0git Optimized build with assertions."
+     },
+     "atlas-emit": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-emit",
+      "sha256": "6d0a907400ba5b6248df12b8df8ac69bd2eff2fdaec781a3888a109e01fc8eeb",
+      "version": "usage: atlas-emit [--allow-untimed] [--map-json|--program-json] <flat-mlir-module>"
+     },
+     "source": {
+      "directory": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/src"
+     }
+    }
+   },
+   "source_sha256": "dd0bdcee9fbf64adbd5dcfd203798d1d95e2f0ca0b21522011805758ad5a8edb",
+   "words_sha256": "05ebac3561b1ff48eef62410050c0ed71bf09f085d924f2efb9e94ea49790b39",
+   "arena_sha256": "05907d71b0b5baa57feca7b4bd44428d6d2a4ed3340a601e37ccf2817326b412",
+   "arena_bytes": 4981248,
+   "reuse_proof": null,
+   "model_cycles": 6635373,
+   "cycles_source": "full launch",
+   "timed_output_equal": true,
+   "status": "ok",
+   "total_cycles": 99530595
+  },
+  {
+   "key": "projection_gemm:{\"k\":2048,\"logical_k\":2048,\"logical_n\":2048,\"m\":32,\"n\":2048,\"rows\":1}",
+   "family": "projection_gemm",
+   "params": {
+    "m": 32,
+    "k": 2048,
+    "n": 2048,
+    "rows": 1,
+    "logical_k": 2048,
+    "logical_n": 2048
+   },
+   "count": 74,
+   "flops": 620756992,
+   "modules": [
+    "model.layers.*.self_attn.o_proj",
+    "lm_head"
+   ],
+   "dtypes": [
+    "bfloat16"
+   ],
+   "phases": [
+    "decode"
+   ],
+   "shape": "32x2048x2048 (logical 1x2048x2048)",
+   "variant": "tiny_breadth recipe",
+   "generator_words": 107,
+   "generator_command": "kernels/projection_gemm/gen.py --shape 32x2048x2048 --rescale-exponent -18 --traffic-reuse",
+   "program_words": 116,
+   "instructions": 106762,
+   "functional_seconds": 207.0,
+   "timed_seconds": 747.5,
+   "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+   "numerics": "rtl",
+   "golden": "ordered_matmul",
+   "bit_exact": true,
+   "full_extent_exact": true,
+   "padding_differences": 0,
+   "padding_signed_zero_only": null,
+   "cosine": 0.9980164049531063,
+   "relative_error": 0.06295531890363294,
+   "max_abs_error": 0.28964877128601074,
+   "meta": {
+    "a_scale": -6,
+    "w_scale": -12
+   },
+   "backend": {
+    "tier": "stream-verified",
+    "words": 116,
+    "words_sha256": "1c14ab5f91fd0087c8db8f1bfa8b7b586f39f1adcdd8c418a6d4f4d7b2c99803",
+    "stream": "pass",
+    "stream_diagnostics": [],
+    "timing": "reject",
+    "timing_diagnostics": [
+     "kernel.S:50:1: error: 'atlas.dma' op may still be in flight when its block ends; timing requires DMA completion before a block boundary, so add atlas.dma_wait in this block"
+    ],
+    "words_equal_assembler": true,
+    "min_tier": "stream-verified",
+    "tools": {
+     "atlas-opt": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-opt",
+      "sha256": "34eb2d6c654c192628e9c02dc49caff9fc6ec250ec80df7c7568c98061621189",
+      "version": "LLVM (http://llvm.org/): LLVM version 23.0.0git Optimized build with assertions."
+     },
+     "atlas-emit": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-emit",
+      "sha256": "6d0a907400ba5b6248df12b8df8ac69bd2eff2fdaec781a3888a109e01fc8eeb",
+      "version": "usage: atlas-emit [--allow-untimed] [--map-json|--program-json] <flat-mlir-module>"
+     },
+     "source": {
+      "directory": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/src"
+     }
+    }
+   },
+   "source_sha256": "31faa52f17e7bbb6e61ea3719ce5e44cee2ed49693a90baffdc749f9a6527fb6",
+   "words_sha256": "1c14ab5f91fd0087c8db8f1bfa8b7b586f39f1adcdd8c418a6d4f4d7b2c99803",
+   "arena_sha256": "f2dff59228f918cc02b25c23c215e7323604ff6f3343591369d0f5f4cc46659d",
+   "arena_bytes": 4391424,
+   "reuse_proof": null,
+   "model_cycles": 3337065,
+   "cycles_source": "full launch",
+   "timed_output_equal": true,
+   "status": "ok",
+   "total_cycles": 246942810
+  },
+  {
+   "key": "projection_gemm:{\"k\":2048,\"logical_k\":2048,\"logical_n\":256,\"m\":128,\"n\":256,\"rows\":128}",
+   "family": "projection_gemm",
+   "params": {
+    "m": 128,
+    "k": 2048,
+    "n": 256,
+    "rows": 128,
+    "logical_k": 2048,
+    "logical_n": 256
+   },
+   "count": 22,
+   "flops": 2952790016,
+   "modules": [
+    "model.layers.*.self_attn.v_proj"
+   ],
+   "dtypes": [
+    "bfloat16"
+   ],
+   "phases": [
+    "prefill"
+   ],
+   "shape": "128x2048x256",
+   "variant": "tiny recipe",
+   "generator_words": 2033,
+   "generator_command": "kernels/projection_gemm/gen.py --shape 128x2048x256 --rescale-exponent -18 --traffic-reuse",
+   "program_words": 2048,
+   "instructions": 27936,
+   "functional_seconds": 384.0,
+   "timed_seconds": 486.5,
+   "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+   "numerics": "rtl",
+   "golden": "ordered_matmul",
+   "bit_exact": true,
+   "full_extent_exact": true,
+   "padding_differences": 0,
+   "padding_signed_zero_only": null,
+   "cosine": 0.9979429340312701,
+   "relative_error": 0.06410850555016288,
+   "max_abs_error": 0.37343406677246094,
+   "meta": {
+    "a_scale": -6,
+    "w_scale": -12
+   },
+   "backend": {
+    "tier": "stream-verified",
+    "words": 2048,
+    "words_sha256": "e1c09c1e9235e810e1e7cf406e94c93bb614c872a8ae507d00872d14b41a0b31",
+    "stream": "pass",
+    "stream_diagnostics": [],
+    "timing": "reject",
+    "timing_diagnostics": [
+     "kernel.S:45:1: error: 'atlas.vload' op RAW conflict with atlas.dma on channel 1, which may still be in flight; a delay cannot cover a DMA transfer, so add atlas.dma_wait first"
+    ],
+    "words_equal_assembler": true,
+    "min_tier": "stream-verified",
+    "tools": {
+     "atlas-opt": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-opt",
+      "sha256": "34eb2d6c654c192628e9c02dc49caff9fc6ec250ec80df7c7568c98061621189",
+      "version": "LLVM (http://llvm.org/): LLVM version 23.0.0git Optimized build with assertions."
+     },
+     "atlas-emit": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-emit",
+      "sha256": "6d0a907400ba5b6248df12b8df8ac69bd2eff2fdaec781a3888a109e01fc8eeb",
+      "version": "usage: atlas-emit [--allow-untimed] [--map-json|--program-json] <flat-mlir-module>"
+     },
+     "source": {
+      "directory": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/src"
+     }
+    }
+   },
+   "source_sha256": "a6194d5309bdda3bcc57609a45a655161b2cf6f8d2fd8721bca7a8e763433d2f",
+   "words_sha256": "e1c09c1e9235e810e1e7cf406e94c93bb614c872a8ae507d00872d14b41a0b31",
+   "arena_sha256": "beb10415375c1cc03eff6aea3df2506b3b6c0835e0099df65305c83561fe0499",
+   "arena_bytes": 852480,
+   "reuse_proof": null,
+   "model_cycles": 1005301,
+   "cycles_source": "full launch",
+   "timed_output_equal": true,
+   "status": "ok",
+   "total_cycles": 22116622
+  },
+  {
+   "key": "projection_gemm:{\"k\":2048,\"logical_k\":2048,\"logical_n\":256,\"m\":32,\"n\":256,\"rows\":1}",
+   "family": "projection_gemm",
+   "params": {
+    "m": 32,
+    "k": 2048,
+    "n": 256,
+    "rows": 1,
+    "logical_k": 2048,
+    "logical_n": 256
+   },
+   "count": 44,
+   "flops": 46137344,
+   "modules": [
+    "model.layers.*.self_attn.v_proj"
+   ],
+   "dtypes": [
+    "bfloat16"
+   ],
+   "phases": [
+    "decode"
+   ],
+   "shape": "32x2048x256 (logical 1x2048x256)",
+   "variant": "tiny_breadth recipe",
+   "generator_words": 107,
+   "generator_command": "kernels/projection_gemm/gen.py --shape 32x2048x256 --rescale-exponent -19 --traffic-reuse",
+   "program_words": 116,
+   "instructions": 13522,
+   "functional_seconds": 35.8,
+   "timed_seconds": 84.6,
+   "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+   "numerics": "rtl",
+   "golden": "ordered_matmul",
+   "bit_exact": true,
+   "full_extent_exact": true,
+   "padding_differences": 0,
+   "padding_signed_zero_only": null,
+   "cosine": 0.9980446160035089,
+   "relative_error": 0.06250556005414541,
+   "max_abs_error": 0.2027280330657959,
+   "meta": {
+    "a_scale": -7,
+    "w_scale": -12
+   },
+   "backend": {
+    "tier": "stream-verified",
+    "words": 116,
+    "words_sha256": "161ef6558062f24755054dbe143469b2a8e3c8ab2b61fb81653f5ab14fd384b7",
+    "stream": "pass",
+    "stream_diagnostics": [],
+    "timing": "reject",
+    "timing_diagnostics": [
+     "kernel.S:50:1: error: 'atlas.dma' op may still be in flight when its block ends; timing requires DMA completion before a block boundary, so add atlas.dma_wait in this block"
+    ],
+    "words_equal_assembler": true,
+    "min_tier": "stream-verified",
+    "tools": {
+     "atlas-opt": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-opt",
+      "sha256": "34eb2d6c654c192628e9c02dc49caff9fc6ec250ec80df7c7568c98061621189",
+      "version": "LLVM (http://llvm.org/): LLVM version 23.0.0git Optimized build with assertions."
+     },
+     "atlas-emit": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-emit",
+      "sha256": "6d0a907400ba5b6248df12b8df8ac69bd2eff2fdaec781a3888a109e01fc8eeb",
+      "version": "usage: atlas-emit [--allow-untimed] [--map-json|--program-json] <flat-mlir-module>"
+     },
+     "source": {
+      "directory": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/src"
+     }
+    }
+   },
+   "source_sha256": "b727a45b1cfee3e5ee1a31204f549bfbe1ddb326c042a6a8d2405d1d1554b54d",
+   "words_sha256": "161ef6558062f24755054dbe143469b2a8e3c8ab2b61fb81653f5ab14fd384b7",
+   "arena_sha256": "75c0a0084ed470f0e1c3d7a3076f4564724db79b8e0e37562246f069bd93bb40",
+   "arena_bytes": 606720,
+   "reuse_proof": null,
+   "model_cycles": 459785,
+   "cycles_source": "full launch",
+   "timed_output_equal": true,
+   "status": "ok",
+   "total_cycles": 20230540
+  },
+  {
+   "key": "projection_gemm:{\"k\":5632,\"logical_k\":5632,\"logical_n\":1024,\"m\":32,\"n\":1024,\"rows\":1}",
+   "family": "projection_gemm",
+   "params": {
+    "m": 32,
+    "k": 5632,
+    "n": 1024,
+    "rows": 1,
+    "logical_k": 5632,
+    "logical_n": 1024
+   },
+   "count": 88,
+   "flops": 1015021568,
+   "modules": [
+    "model.layers.*.mlp.down_proj"
+   ],
+   "dtypes": [
+    "bfloat16"
+   ],
+   "phases": [
+    "decode"
+   ],
+   "shape": "32x5632x1024 (logical 1x5632x1024)",
+   "variant": "tiny_breadth recipe",
+   "generator_words": 107,
+   "generator_command": "kernels/projection_gemm/gen.py --shape 32x5632x1024 --rescale-exponent -17 --traffic-reuse",
+   "program_words": 116,
+   "instructions": 146078,
+   "functional_seconds": 268.3,
+   "timed_seconds": 893.0,
+   "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+   "numerics": "rtl",
+   "golden": "ordered_matmul",
+   "bit_exact": true,
+   "full_extent_exact": true,
+   "padding_differences": 0,
+   "padding_signed_zero_only": null,
+   "cosine": 0.9954055024152542,
+   "relative_error": 0.09586339710106695,
+   "max_abs_error": 0.5909385681152344,
+   "meta": {
+    "a_scale": -6,
+    "w_scale": -11
+   },
+   "backend": {
+    "tier": "stream-verified",
+    "words": 116,
+    "words_sha256": "0fc32569bd23dc618466f85146ed857d2653a32e71de275cbd450b520941abda",
+    "stream": "pass",
+    "stream_diagnostics": [],
+    "timing": "reject",
+    "timing_diagnostics": [
+     "kernel.S:50:1: error: 'atlas.dma' op may still be in flight when its block ends; timing requires DMA completion before a block boundary, so add atlas.dma_wait in this block"
+    ],
+    "words_equal_assembler": true,
+    "min_tier": "stream-verified",
+    "tools": {
+     "atlas-opt": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-opt",
+      "sha256": "34eb2d6c654c192628e9c02dc49caff9fc6ec250ec80df7c7568c98061621189",
+      "version": "LLVM (http://llvm.org/): LLVM version 23.0.0git Optimized build with assertions."
+     },
+     "atlas-emit": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-emit",
+      "sha256": "6d0a907400ba5b6248df12b8df8ac69bd2eff2fdaec781a3888a109e01fc8eeb",
+      "version": "usage: atlas-emit [--allow-untimed] [--map-json|--program-json] <flat-mlir-module>"
+     },
+     "source": {
+      "directory": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/src"
+     }
+    }
+   },
+   "source_sha256": "a215812c8b9e57e892d6fb9e750a4394a0fb2f52c3291e30f7c9fa6ac8ddc32c",
+   "words_sha256": "0fc32569bd23dc618466f85146ed857d2653a32e71de275cbd450b520941abda",
+   "arena_sha256": "ff69036cf51841364a9bc47bd8ecfa6e6537c47408972acb9e38059f56eb4f3b",
+   "arena_bytes": 6013440,
+   "reuse_proof": null,
+   "model_cycles": 4501837,
+   "cycles_source": "full launch",
+   "timed_output_equal": true,
+   "status": "ok",
+   "total_cycles": 396161656
+  },
+  {
+   "key": "rmsnorm:{\"m\":128,\"rows\":128,\"width\":2048}",
+   "family": "rmsnorm",
+   "params": {
+    "rows": 128,
+    "m": 128,
+    "width": 2048
+   },
+   "count": 44,
+   "flops": 46148608,
+   "modules": [
+    "model.layers.*.input_layernorm",
+    "model.layers.*.post_attention_layernorm"
+   ],
+   "dtypes": [
+    "bfloat16"
+   ],
+   "phases": [
+    "prefill"
+   ],
+   "shape": "128x2048",
+   "variant": "standalone norm launch (DMA BF16 rows, RMS post-pass, FP8 out)",
+   "generator_words": 191,
+   "generator_command": "kernels/rmsnorm/gen.py --rows 128 --width 2048 --norm-scale-exponent -6",
+   "program_words": 200,
+   "instructions": 19925,
+   "functional_seconds": 7.7,
+   "timed_seconds": 114.7,
+   "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+   "numerics": "rtl",
+   "golden": null,
+   "bit_exact": null,
+   "full_extent_exact": null,
+   "padding_differences": null,
+   "padding_signed_zero_only": null,
+   "cosine": 0.9996376268553088,
+   "relative_error": 0.027104351314255502,
+   "max_abs_error": 0.24495935440063477,
+   "meta": {
+    "output_scale": -6
+   },
+   "backend": {
+    "tier": "verified",
+    "words": 200,
+    "words_sha256": "2ccee27fd0747b575cfa717192be6f6e22a600017071030685e69961d499b80f",
+    "stream": "pass",
+    "stream_diagnostics": [],
+    "timing": "pass",
+    "timing_diagnostics": [],
+    "words_equal_assembler": true,
+    "min_tier": "stream-verified",
+    "tools": {
+     "atlas-opt": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-opt",
+      "sha256": "34eb2d6c654c192628e9c02dc49caff9fc6ec250ec80df7c7568c98061621189",
+      "version": "LLVM (http://llvm.org/): LLVM version 23.0.0git Optimized build with assertions."
+     },
+     "atlas-emit": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-emit",
+      "sha256": "6d0a907400ba5b6248df12b8df8ac69bd2eff2fdaec781a3888a109e01fc8eeb",
+      "version": "usage: atlas-emit [--allow-untimed] [--map-json|--program-json] <flat-mlir-module>"
+     },
+     "source": {
+      "directory": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/src"
+     }
+    }
+   },
+   "source_sha256": "522f2365679d0b8d6b253b3227ce2aa198f6b52ab2f61cf1cc6345aadce8ccac",
+   "words_sha256": "2ccee27fd0747b575cfa717192be6f6e22a600017071030685e69961d499b80f",
+   "arena_sha256": "b87991f7afe98068aabb299a3555ec6644a809dbbb3ca9ce2367a93583b686f9",
+   "arena_bytes": 983552,
+   "reuse_proof": null,
+   "model_cycles": 997891,
+   "cycles_source": "full launch",
+   "timed_output_equal": true,
+   "status": "ok",
+   "total_cycles": 43907204
+  },
+  {
+   "key": "rmsnorm:{\"m\":32,\"rows\":1,\"width\":2048}",
+   "family": "rmsnorm",
+   "params": {
+    "rows": 1,
+    "m": 32,
+    "width": 2048
+   },
+   "count": 88,
+   "flops": 721072,
+   "modules": [
+    "model.layers.*.input_layernorm",
+    "model.layers.*.post_attention_layernorm"
+   ],
+   "dtypes": [
+    "bfloat16"
+   ],
+   "phases": [
+    "decode"
+   ],
+   "shape": "32x2048 (1 rows)",
+   "variant": "standalone norm launch (DMA BF16 rows, RMS post-pass, FP8 out)",
+   "generator_words": 191,
+   "generator_command": "kernels/rmsnorm/gen.py --rows 32 --width 2048 --norm-scale-exponent -7",
+   "program_words": 200,
+   "instructions": 5357,
+   "functional_seconds": 7.8,
+   "timed_seconds": 38.0,
+   "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+   "numerics": "rtl",
+   "golden": null,
+   "bit_exact": null,
+   "full_extent_exact": null,
+   "padding_differences": null,
+   "padding_signed_zero_only": null,
+   "cosine": 0.9996313925657255,
+   "relative_error": 0.027163940193094534,
+   "max_abs_error": 0.12200021743774414,
+   "meta": {
+    "output_scale": -7
+   },
+   "backend": {
+    "tier": "verified",
+    "words": 200,
+    "words_sha256": "53c05e5aa268903f8d28ccf7121aede69317d84293fce4d599d4aa453b9bc676",
+    "stream": "pass",
+    "stream_diagnostics": [],
+    "timing": "pass",
+    "timing_diagnostics": [],
+    "words_equal_assembler": true,
+    "min_tier": "stream-verified",
+    "tools": {
+     "atlas-opt": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-opt",
+      "sha256": "34eb2d6c654c192628e9c02dc49caff9fc6ec250ec80df7c7568c98061621189",
+      "version": "LLVM (http://llvm.org/): LLVM version 23.0.0git Optimized build with assertions."
+     },
+     "atlas-emit": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-emit",
+      "sha256": "6d0a907400ba5b6248df12b8df8ac69bd2eff2fdaec781a3888a109e01fc8eeb",
+      "version": "usage: atlas-emit [--allow-untimed] [--map-json|--program-json] <flat-mlir-module>"
+     },
+     "source": {
+      "directory": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/src"
+     }
+    }
+   },
+   "source_sha256": "fffd1482b29d659e6d585ed3126dcff5b9ee75bc2f7ac5e4f21b3469e8b1560c",
+   "words_sha256": "53c05e5aa268903f8d28ccf7121aede69317d84293fce4d599d4aa453b9bc676",
+   "arena_sha256": "902d9b868b0ed46c1e411cdef68a050c64712bda0b54e4e737affee74537de50",
+   "arena_bytes": 393728,
+   "reuse_proof": null,
+   "model_cycles": 358882,
+   "cycles_source": "full launch",
+   "timed_output_equal": true,
+   "status": "ok",
+   "total_cycles": 31581616
+  },
+  {
+   "key": "rne_add:{\"k\":2048,\"logical_k\":2048,\"logical_n\":2048,\"m\":128,\"n\":2048,\"rows\":128}",
+   "family": "rne_add",
+   "params": {
+    "m": 128,
+    "k": 2048,
+    "n": 2048,
+    "rows": 128,
+    "logical_k": 2048,
+    "logical_n": 2048
+   },
+   "count": 22,
+   "flops": 23622320128,
+   "modules": [
+    "model.layers.*.self_attn.o_proj"
+   ],
+   "dtypes": [
+    "bfloat16"
+   ],
+   "phases": [
+    "prefill"
+   ],
+   "shape": "128x2048x2048",
+   "variant": "tiny recipe + add_rne epilogue (kernels/epilogue/gen.py --steps add_rne; kernels/rne_add/gen.py emits only the add sequence)",
+   "generator_words": 2425,
+   "generator_command": "kernels/epilogue/gen.py --shape 128x2048x2048 --steps add_rne --rescale-exponent -18",
+   "program_words": 2448,
+   "instructions": 229264,
+   "functional_seconds": 2529.9,
+   "timed_seconds": 3689.1,
+   "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+   "numerics": "rtl",
+   "golden": "ordered_matmul + exact sum rounded to BF16",
+   "bit_exact": true,
+   "full_extent_exact": true,
+   "padding_differences": 0,
+   "padding_signed_zero_only": null,
+   "cosine": 0.9990761932652152,
+   "relative_error": 0.04297410275777962,
+   "max_abs_error": 0.4480733871459961,
+   "meta": {
+    "a_scale": -6,
+    "w_scale": -12
+   },
+   "backend": {
+    "tier": "stream-verified",
+    "words": 2448,
+    "words_sha256": "3d1174d68681b47e23afcc61fdc2dc309f4f4c93554ec8e4b9a510719ba03041",
+    "stream": "pass",
+    "stream_diagnostics": [],
+    "timing": "reject",
+    "timing_diagnostics": [
+     "kernel.S:45:1: error: 'atlas.vload' op RAW conflict with atlas.dma on channel 1, which may still be in flight; a delay cannot cover a DMA transfer, so add atlas.dma_wait first"
+    ],
+    "words_equal_assembler": true,
+    "min_tier": "stream-verified",
+    "tools": {
+     "atlas-opt": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-opt",
+      "sha256": "34eb2d6c654c192628e9c02dc49caff9fc6ec250ec80df7c7568c98061621189",
+      "version": "LLVM (http://llvm.org/): LLVM version 23.0.0git Optimized build with assertions."
+     },
+     "atlas-emit": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-emit",
+      "sha256": "6d0a907400ba5b6248df12b8df8ac69bd2eff2fdaec781a3888a109e01fc8eeb",
+      "version": "usage: atlas-emit [--allow-untimed] [--map-json|--program-json] <flat-mlir-module>"
+     },
+     "source": {
+      "directory": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/src"
+     }
+    }
+   },
+   "source_sha256": "66d14f07ab9bebeb29457e00d666c1ff0414cca294b59238452d49de4cab9d11",
+   "words_sha256": "3d1174d68681b47e23afcc61fdc2dc309f4f4c93554ec8e4b9a510719ba03041",
+   "arena_sha256": "c8cd18169780d1525b049c7b8556d3e4e8767aba8e886272d6951f960957bf59",
+   "arena_bytes": 5505536,
+   "reuse_proof": null,
+   "model_cycles": 7779565,
+   "cycles_source": "full launch",
+   "timed_output_equal": true,
+   "status": "ok",
+   "total_cycles": 171150430
+  },
+  {
+   "key": "rne_add:{\"k\":5632,\"logical_k\":5632,\"logical_n\":1024,\"m\":128,\"n\":1024,\"rows\":128}",
+   "family": "rne_add",
+   "params": {
+    "m": 128,
+    "k": 5632,
+    "n": 1024,
+    "rows": 128,
+    "logical_k": 5632,
+    "logical_n": 1024
+   },
+   "count": 44,
+   "flops": 64961380352,
+   "modules": [
+    "model.layers.*.mlp.down_proj"
+   ],
+   "dtypes": [
+    "bfloat16"
+   ],
+   "phases": [
+    "prefill"
+   ],
+   "shape": "128x5632x1024",
+   "variant": "tiny_breadth recipe + add_rne epilogue (kernels/epilogue/gen.py --steps add_rne; kernels/rne_add/gen.py emits only the add sequence)",
+   "generator_words": 337,
+   "generator_command": "kernels/epilogue/gen.py --shape 128x5632x1024 --steps add_rne --rescale-exponent -17",
+   "program_words": 354,
+   "instructions": 363187,
+   "functional_seconds": 3822.6,
+   "timed_seconds": 5471.7,
+   "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+   "numerics": "rtl",
+   "golden": "ordered_matmul + exact sum rounded to BF16",
+   "bit_exact": true,
+   "full_extent_exact": true,
+   "padding_differences": 0,
+   "padding_signed_zero_only": null,
+   "cosine": 0.9970821446754847,
+   "relative_error": 0.0763361845552591,
+   "max_abs_error": 1.1354269981384277,
+   "meta": {
+    "a_scale": -6,
+    "w_scale": -11
+   },
+   "backend": {
+    "tier": "stream-verified",
+    "words": 354,
+    "words_sha256": "20ee3414263a8c5cd8ed10c4c83b1371a195e0735de75cc4b548cf876647a2ee",
+    "stream": "pass",
+    "stream_diagnostics": [],
+    "timing": "reject",
+    "timing_diagnostics": [
+     "kernel.S:66:1: error: 'atlas.dma' op may still be in flight when its block ends; timing requires DMA completion before a block boundary, so add atlas.dma_wait in this block"
+    ],
+    "words_equal_assembler": true,
+    "min_tier": "stream-verified",
+    "tools": {
+     "atlas-opt": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-opt",
+      "sha256": "34eb2d6c654c192628e9c02dc49caff9fc6ec250ec80df7c7568c98061621189",
+      "version": "LLVM (http://llvm.org/): LLVM version 23.0.0git Optimized build with assertions."
+     },
+     "atlas-emit": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-emit",
+      "sha256": "6d0a907400ba5b6248df12b8df8ac69bd2eff2fdaec781a3888a109e01fc8eeb",
+      "version": "usage: atlas-emit [--allow-untimed] [--map-json|--program-json] <flat-mlir-module>"
+     },
+     "source": {
+      "directory": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/src"
+     }
+    }
+   },
+   "source_sha256": "357527b4309dda52dce51f4655962a8aa13cc3d6bbbfc41bbf605b1357a37707",
+   "words_sha256": "20ee3414263a8c5cd8ed10c4c83b1371a195e0735de75cc4b548cf876647a2ee",
+   "arena_sha256": "3997ac10ce915155ae33d6d9f34d4c897ebefd05ca6ff7949fcfc671f77f4e84",
+   "arena_bytes": 7012864,
+   "reuse_proof": null,
+   "model_cycles": 9979346,
+   "cycles_source": "full launch",
+   "timed_output_equal": true,
+   "status": "ok",
+   "total_cycles": 439091224
+  },
+  {
+   "key": "rope:{\"k\":2048,\"logical_k\":2048,\"logical_n\":2048,\"m\":128,\"n\":2048,\"rows\":128}",
+   "family": "rope",
+   "params": {
+    "m": 128,
+    "k": 2048,
+    "n": 2048,
+    "rows": 128,
+    "logical_k": 2048,
+    "logical_n": 2048
+   },
+   "count": 22,
+   "flops": 23622320128,
+   "modules": [
+    "model.layers.*.self_attn.q_proj"
+   ],
+   "dtypes": [
+    "bfloat16"
+   ],
+   "phases": [
+    "prefill"
+   ],
+   "shape": "128x2048x2048",
+   "variant": "tiny recipe + RoPE post-pass (positions 0..127)",
+   "generator_words": 2316,
+   "generator_command": "kernels/rope/gen.py --shape 128x2048x2048 --rescale-exponent -18",
+   "program_words": 2337,
+   "instructions": 227508,
+   "functional_seconds": 2708.9,
+   "timed_seconds": 3610.6,
+   "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+   "numerics": "rtl",
+   "golden": "ordered_matmul + RoPE RNE formula",
+   "bit_exact": true,
+   "full_extent_exact": true,
+   "padding_differences": 0,
+   "padding_signed_zero_only": null,
+   "cosine": 0.9979593151888168,
+   "relative_error": 0.06385308511695324,
+   "max_abs_error": 0.4413435459136963,
+   "meta": {
+    "a_scale": -6,
+    "w_scale": -12
+   },
+   "backend": {
+    "tier": "stream-verified",
+    "words": 2337,
+    "words_sha256": "5e7245f0a14636b71bca7f09f4c15c0ba0114b3a8b164a6b6ca50810df889c0a",
+    "stream": "pass",
+    "stream_diagnostics": [],
+    "timing": "reject",
+    "timing_diagnostics": [
+     "kernel.S:45:1: error: 'atlas.vload' op RAW conflict with atlas.dma on channel 1, which may still be in flight; a delay cannot cover a DMA transfer, so add atlas.dma_wait first"
+    ],
+    "words_equal_assembler": true,
+    "min_tier": "stream-verified",
+    "tools": {
+     "atlas-opt": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-opt",
+      "sha256": "34eb2d6c654c192628e9c02dc49caff9fc6ec250ec80df7c7568c98061621189",
+      "version": "LLVM (http://llvm.org/): LLVM version 23.0.0git Optimized build with assertions."
+     },
+     "atlas-emit": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-emit",
+      "sha256": "6d0a907400ba5b6248df12b8df8ac69bd2eff2fdaec781a3888a109e01fc8eeb",
+      "version": "usage: atlas-emit [--allow-untimed] [--map-json|--program-json] <flat-mlir-module>"
+     },
+     "source": {
+      "directory": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/src"
+     }
+    }
+   },
+   "source_sha256": "190eb6b0cc3af7e76c05135855409d2c141fc4a0f9913ecb6a36e2a15d7db65e",
+   "words_sha256": "5e7245f0a14636b71bca7f09f4c15c0ba0114b3a8b164a6b6ca50810df889c0a",
+   "arena_sha256": "a6a4f4b1f9838a8e946806aef775fe6ef6e84e63bf9124065cdf6ef71c55cea4",
+   "arena_bytes": 5005824,
+   "reuse_proof": null,
+   "model_cycles": 7318670,
+   "cycles_source": "full launch",
+   "timed_output_equal": true,
+   "status": "ok",
+   "total_cycles": 161010740
+  },
+  {
+   "key": "rope:{\"k\":2048,\"logical_k\":2048,\"logical_n\":2048,\"m\":32,\"n\":2048,\"rows\":1}",
+   "family": "rope",
+   "params": {
+    "m": 32,
+    "k": 2048,
+    "n": 2048,
+    "rows": 1,
+    "logical_k": 2048,
+    "logical_n": 2048
+   },
+   "count": 44,
+   "flops": 369098752,
+   "modules": [
+    "model.layers.*.self_attn.q_proj"
+   ],
+   "dtypes": [
+    "bfloat16"
+   ],
+   "phases": [
+    "decode"
+   ],
+   "shape": "32x2048x2048 (logical 1x2048x2048)",
+   "variant": "tiny_breadth recipe + RoPE post-pass (positions 0..31)",
+   "generator_words": 359,
+   "generator_command": "kernels/rope/gen.py --shape 32x2048x2048 --rescale-exponent -18",
+   "program_words": 374,
+   "instructions": 112758,
+   "functional_seconds": 211.2,
+   "timed_seconds": 754.1,
+   "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+   "numerics": "rtl",
+   "golden": "ordered_matmul + RoPE RNE formula",
+   "bit_exact": true,
+   "full_extent_exact": false,
+   "padding_differences": 5248,
+   "padding_signed_zero_only": true,
+   "cosine": 0.9980250552076829,
+   "relative_error": 0.06285476501511714,
+   "max_abs_error": 0.30078840255737305,
+   "meta": {
+    "a_scale": -6,
+    "w_scale": -12
+   },
+   "backend": {
+    "tier": "stream-verified",
+    "words": 374,
+    "words_sha256": "d1548baf9c02ae29c4e43d3915cb743d77e92316de5c2baf6219337f167f58c4",
+    "stream": "pass",
+    "stream_diagnostics": [],
+    "timing": "reject",
+    "timing_diagnostics": [
+     "kernel.S:50:1: error: 'atlas.dma' op may still be in flight when its block ends; timing requires DMA completion before a block boundary, so add atlas.dma_wait in this block"
+    ],
+    "words_equal_assembler": true,
+    "min_tier": "stream-verified",
+    "tools": {
+     "atlas-opt": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-opt",
+      "sha256": "34eb2d6c654c192628e9c02dc49caff9fc6ec250ec80df7c7568c98061621189",
+      "version": "LLVM (http://llvm.org/): LLVM version 23.0.0git Optimized build with assertions."
+     },
+     "atlas-emit": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-emit",
+      "sha256": "6d0a907400ba5b6248df12b8df8ac69bd2eff2fdaec781a3888a109e01fc8eeb",
+      "version": "usage: atlas-emit [--allow-untimed] [--map-json|--program-json] <flat-mlir-module>"
+     },
+     "source": {
+      "directory": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/src"
+     }
+    }
+   },
+   "source_sha256": "af952ed5a5e63f9b088994e1bb5561df3cbeee835047158058f4ac905e3abda1",
+   "words_sha256": "d1548baf9c02ae29c4e43d3915cb743d77e92316de5c2baf6219337f167f58c4",
+   "arena_sha256": "ac3ee54bf2e565002afaa04f6fbb3f23dd89a37aa79cc3a141e41a4661e1413b",
+   "arena_bytes": 4397568,
+   "reuse_proof": null,
+   "model_cycles": 3508117,
+   "cycles_source": "full launch",
+   "timed_output_equal": true,
+   "status": "ok",
+   "total_cycles": 154357148
+  },
+  {
+   "key": "rope:{\"k\":2048,\"logical_k\":2048,\"logical_n\":256,\"m\":128,\"n\":256,\"rows\":128}",
+   "family": "rope",
+   "params": {
+    "m": 128,
+    "k": 2048,
+    "n": 256,
+    "rows": 128,
+    "logical_k": 2048,
+    "logical_n": 256
+   },
+   "count": 22,
+   "flops": 2952790016,
+   "modules": [
+    "model.layers.*.self_attn.k_proj"
+   ],
+   "dtypes": [
+    "bfloat16"
+   ],
+   "phases": [
+    "prefill"
+   ],
+   "shape": "128x2048x256",
+   "variant": "tiny recipe + RoPE post-pass (positions 0..127)",
+   "generator_words": 2316,
+   "generator_command": "kernels/rope/gen.py --shape 128x2048x256 --rescale-exponent -18",
+   "program_words": 2337,
+   "instructions": 31060,
+   "functional_seconds": 298.2,
+   "timed_seconds": 410.1,
+   "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+   "numerics": "rtl",
+   "golden": "ordered_matmul + RoPE RNE formula",
+   "bit_exact": true,
+   "full_extent_exact": true,
+   "padding_differences": 0,
+   "padding_signed_zero_only": null,
+   "cosine": 0.9979667992310487,
+   "relative_error": 0.0637455571258881,
+   "max_abs_error": 0.39719510078430176,
+   "meta": {
+    "a_scale": -6,
+    "w_scale": -12
+   },
+   "backend": {
+    "tier": "stream-verified",
+    "words": 2337,
+    "words_sha256": "29967d941ea4e0434d2ffe012596f6c5b51f596b607499a29311c375a7da4b33",
+    "stream": "pass",
+    "stream_diagnostics": [],
+    "timing": "reject",
+    "timing_diagnostics": [
+     "kernel.S:45:1: error: 'atlas.vload' op RAW conflict with atlas.dma on channel 1, which may still be in flight; a delay cannot cover a DMA transfer, so add atlas.dma_wait first"
+    ],
+    "words_equal_assembler": true,
+    "min_tier": "stream-verified",
+    "tools": {
+     "atlas-opt": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-opt",
+      "sha256": "34eb2d6c654c192628e9c02dc49caff9fc6ec250ec80df7c7568c98061621189",
+      "version": "LLVM (http://llvm.org/): LLVM version 23.0.0git Optimized build with assertions."
+     },
+     "atlas-emit": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-emit",
+      "sha256": "6d0a907400ba5b6248df12b8df8ac69bd2eff2fdaec781a3888a109e01fc8eeb",
+      "version": "usage: atlas-emit [--allow-untimed] [--map-json|--program-json] <flat-mlir-module>"
+     },
+     "source": {
+      "directory": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/src"
+     }
+    }
+   },
+   "source_sha256": "966f6280f91a8b109135f5133399b1a9410d62187712b0c161f27245a77c2feb",
+   "words_sha256": "29967d941ea4e0434d2ffe012596f6c5b51f596b607499a29311c375a7da4b33",
+   "arena_sha256": "41af4677702e7705efb10a73baf0499285077734fc943c5c944b5fe31b1b7c57",
+   "arena_bytes": 877056,
+   "reuse_proof": null,
+   "model_cycles": 1107934,
+   "cycles_source": "full launch",
+   "timed_output_equal": true,
+   "status": "ok",
+   "total_cycles": 24374548
+  },
+  {
+   "key": "rope:{\"k\":2048,\"logical_k\":2048,\"logical_n\":256,\"m\":32,\"n\":256,\"rows\":1}",
+   "family": "rope",
+   "params": {
+    "m": 32,
+    "k": 2048,
+    "n": 256,
+    "rows": 1,
+    "logical_k": 2048,
+    "logical_n": 256
+   },
+   "count": 44,
+   "flops": 46137344,
+   "modules": [
+    "model.layers.*.self_attn.k_proj"
+   ],
+   "dtypes": [
+    "bfloat16"
+   ],
+   "phases": [
+    "decode"
+   ],
+   "shape": "32x2048x256 (logical 1x2048x256)",
+   "variant": "tiny_breadth recipe + RoPE post-pass (positions 0..31)",
+   "generator_words": 359,
+   "generator_command": "kernels/rope/gen.py --shape 32x2048x256 --rescale-exponent -18",
+   "program_words": 374,
+   "instructions": 14338,
+   "functional_seconds": 27.7,
+   "timed_seconds": 117.6,
+   "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+   "numerics": "rtl",
+   "golden": "ordered_matmul + RoPE RNE formula",
+   "bit_exact": true,
+   "full_extent_exact": false,
+   "padding_differences": 656,
+   "padding_signed_zero_only": true,
+   "cosine": 0.9977265657822948,
+   "relative_error": 0.06752246823393424,
+   "max_abs_error": 0.17890524864196777,
+   "meta": {
+    "a_scale": -6,
+    "w_scale": -12
+   },
+   "backend": {
+    "tier": "stream-verified",
+    "words": 374,
+    "words_sha256": "0862bbf6d2213777a0ac947448e976ec25cca804c58b49e77b79eb852c8fd09f",
+    "stream": "pass",
+    "stream_diagnostics": [],
+    "timing": "reject",
+    "timing_diagnostics": [
+     "kernel.S:50:1: error: 'atlas.dma' op may still be in flight when its block ends; timing requires DMA completion before a block boundary, so add atlas.dma_wait in this block"
+    ],
+    "words_equal_assembler": true,
+    "min_tier": "stream-verified",
+    "tools": {
+     "atlas-opt": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-opt",
+      "sha256": "34eb2d6c654c192628e9c02dc49caff9fc6ec250ec80df7c7568c98061621189",
+      "version": "LLVM (http://llvm.org/): LLVM version 23.0.0git Optimized build with assertions."
+     },
+     "atlas-emit": {
+      "path": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin/atlas-emit",
+      "sha256": "6d0a907400ba5b6248df12b8df8ac69bd2eff2fdaec781a3888a109e01fc8eeb",
+      "version": "usage: atlas-emit [--allow-untimed] [--map-json|--program-json] <flat-mlir-module>"
+     },
+     "source": {
+      "directory": "/scratch/reednicolas/atlas-tmp/jobs/K/B/final4/src"
+     }
+    }
+   },
+   "source_sha256": "d995d2599b335bf842c3d656e53dee190d76b6492a202d7d55a94766a053c8d2",
+   "words_sha256": "0862bbf6d2213777a0ac947448e976ec25cca804c58b49e77b79eb852c8fd09f",
+   "arena_sha256": "8e6ea7c4e15ca8a8f026fd5aced06e197fcabbeff46de5c974b436c47476c597",
+   "arena_bytes": 612864,
+   "reuse_proof": null,
+   "model_cycles": 485881,
+   "cycles_source": "full launch",
+   "timed_output_equal": true,
+   "status": "ok",
+   "total_cycles": 21378764
+  }
+ ],
+ "compiler_summary": {
+  "tiers": {
+   "stream-verified": 24,
+   "verified": 2
+  }
+ }
+}

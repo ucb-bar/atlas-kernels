@@ -1,8 +1,8 @@
 # tinyllama kernel bench at model shapes
 
-Regenerate: `PYTHONPATH="$NPU_MODEL" "$MODEL_PYTHON" coverage/bench_model.py --coverage coverage/coverage.json --model tinyllama --model-root "$NPU_MODEL" --out "$OUT/bench" --workers 32 --atlas-mlir-bin "$ATLAS_MLIR_BIN" --min-tier stream-verified`
+Regenerate: `python /scratch/reednicolas/atlas-tmp/jobs/K2/FRESH/tmp/sources/atlas-kernels/coverage/bench_model.py --coverage /scratch/reednicolas/atlas-tmp/jobs/K2/FRESH/tmp/sources/atlas-kernels/coverage/coverage.json --model tinyllama --model-root /tmp/reednicolas-atlas/oct31/V2/A/npu-model --atlas-mlir-bin /scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin --out /scratch/reednicolas/atlas-tmp/jobs/K2/FRESH/out/benches/tinyllama --workers 8 --job-timeout 172800 --subset-after 172800 --max-cycles 2000000000 --max-instructions 500000000`
 
-Input: `coverage/coverage.json` (SHA-256 `4abb075f1683e18d7e1591b408feaab8ac55652db0dc3a81282c3de56b6c17a5`), coverage status COMPLETE. The coverage derives 26 distinct launches; 26 executed on npu_model `47b8599d8ffbe5ddd96059ffe2b5be2427a410f5` with numerics="rtl" on seeded synthetic inputs at the model's shape (16 worker processes; 17,318 job-seconds in all, longest job 1,396 s).
+Input: `coverage/coverage.json` (SHA-256 `4abb075f1683e18d7e1591b408feaab8ac55652db0dc3a81282c3de56b6c17a5`), coverage status COMPLETE. The coverage derives 26 distinct launches; 26 executed on npu_model `47b8599d8ffbe5ddd96059ffe2b5be2427a410f5` with numerics="rtl" on seeded synthetic inputs at model shapes (8 worker processes; 69,858 job-seconds in all, longest job 5,472 s).
 
 Model cycles are npu_model Core cycle-model counts, not RTL cycles. Cycles x count multiplies one launch by the number of launches in the model; the sums below are device-only estimates that ignore host time, launch overhead, and data movement between launches. Bit-exact compares output bytes with the independent lib/golden reference where the family has one; cosine and rel-err compare the decoded output with an FP32 PyTorch reference on the unquantized inputs, so they include FP8 input quantization. Inputs are synthetic, so fidelity and data-dependent cycles are representative, not the model's.
 
@@ -22,8 +22,6 @@ Compiler backend: machine IR, atlas-opt stream and timing verifiers, and atlas-e
 
 Device cycle estimate (sum of model cycles x count over 1,038 of 1,038 launches): 3,537,507,930 npu_model model cycles. It ignores host time and launch overhead.
 
-These totals include historically reused functional and timed results; zero functional or timed bench jobs were rerun for this retained report. Reconstructed staging, program-word checks, and per-job result hashes are recorded in `reuse-proof.json` beside the generated JSON.
-
 Compiler tier counts by distinct launch: 24 `stream-verified`, 2 `verified`.
 
 | launch kind | launches | launches with cycles | model cycles x count | share |
@@ -38,7 +36,15 @@ Compiler tier counts by distinct launch: 24 `stream-verified`, 2 `verified`.
 Unsupported or failed launches: 0.
 
 Shapes that took more than 20 minutes on npu_model:
-- `rne_add` 128x5632x1024: functional 1108.4 s, timed 1395.7 s; completed; cycles: full launch
+- `epilogue` 128x2048x1536 mul FP8 out: functional 2079.1 s, timed 3341.7 s; completed; cycles: full launch
+- `epilogue` 128x2048x2048 mul FP8 out: functional 3053.0 s, timed 4329.2 s; completed; cycles: full launch
+- `epilogue` 128x2048x1536 silu: functional 2747.3 s, timed 3544.6 s; completed; cycles: full launch
+- `epilogue` 128x2048x2048 silu: functional 3783.9 s, timed 4472.1 s; completed; cycles: full launch
+- `projection_gemm` 128x2048x1280: functional 1783.9 s, timed 2516.5 s; completed; cycles: full launch
+- `projection_gemm` 128x2048x2048: functional 2665.6 s, timed 3628.2 s; completed; cycles: full launch
+- `rne_add` 128x2048x2048: functional 2529.9 s, timed 3689.1 s; completed; cycles: full launch
+- `rne_add` 128x5632x1024: functional 3822.6 s, timed 5471.7 s; completed; cycles: full launch
+- `rope` 128x2048x2048: functional 2708.9 s, timed 3610.6 s; completed; cycles: full launch
 
 ## Launches
 
@@ -79,18 +85,4 @@ None: every exported op has a placement.
 
 ## Notes
 
-Launches come from `coverage/coverage.json` and the `launch` hints in `coverage/mapping.yaml`: projection calls split into physical panels by `bench.tinyllama` (128 rows, N in 2,048-column chunks, 1,024 when K is 5,632), which reproduces the kit's 840 panels; gate and up panels bench as their fused SiLU and multiply epilogues, q and k panels with the RoPE post-pass, and prefill o and down panels with the exact residual add, as the qualified build launches them.
-
-The 9 TinyLlama shapes that `lib/kernel_bench.py` also benches (`coverage/RESULTS.md`) give identical model cycles here.
-
-Decode RoPE launches (32 physical rows, 1 logical row) match the golden on the logical row; in the 31 zero-padded rows the device writes -0 where the golden RNE formula gives +0 (656 and 5,248 words). The kit discards those rows. Bit-exact is therefore reported over the logical extent, with the padding words counted.
-
-RoPE tables use positions 0 to M-1 for every launch (decode uses positions 128 and 129 in the model); attention uses the generator's causal mask with the model's query start. Table values are arena data; matching launch geometry alone does not establish literal word equality with address-specific kit programs.
-
-Functional and timed results are reused from Track G only after regenerating each job with the pinned Track G staging code and this bench, proving equal program-word and staged-arena SHA-256 digests, and passing the compiler word check; the per-job proof is in `reuse-proof.json` beside the generated JSON. No functional or timed job changed, including the row-subset estimate.
-
-This bench's 3,537,507,930 npu_model model cycles and the 3,528,847,056 recorded by the baseline F3-h0 kit (`F/f3h0/results.json`, cited by atlas-mlir `tools/tiny_full/REPRODUCING.md`) are canonical for different programs and timing conventions. The baseline performs decode RoPE on the host; the current kit overlay and this bench fuse it into 88 decode q/k launches. In the historical timing convention, that adds 44 x 171,052 + 44 x 26,096 = 8,674,512 cycles.
-
-The historical cycle runner replaces the final ECALL with a cycle-counter sequence, adding 5 cycles per launch. This bench times the unmodified ECALL, which also cancels the remaining 128 cycles of the terminal `delay 128` in all 66 attention launches on npu_model 47b8599. The exact reconciliation is 3,537,507,930 - 3,528,847,056 = 8,674,512 - 972 x 5 - 66 x 133 = 8,660,874 cycles. The current overlay in the historical timing convention would therefore be 3,537,521,568 cycles, a derived value, not an independently timed full-overlay result.
-
-All 66 attention masks, descriptors, key counts, and layout offsets match the kit controls byte for byte. RoPE positions and synthetic values differ, but the variant and terminal-timing changes account for the complete difference, leaving no unexplained data-dependent cycle term. The reconciliation uses per-shape historical receipts, normalized schedule joins for 1,038 launches, and four scalar timing probes; it does not claim literal word equality between these address-specific kit and bench programs.
+Fully rerun at atlas-kernels `80c5f27d4bcded9c1ca7618a17ffcdbae2be7a39` and atlas-mlir `b8dca4e65459d24cb74a403569b46e8325c4c489`: 52 fresh functional/timed jobs, with no reuse. All 26 launch types have measured full-shape timing. FRESH receipts: `/scratch/reednicolas/atlas-tmp/jobs/K2/FRESH/out/benches/tinyllama/MODEL-BENCH.json` and `/scratch/reednicolas/atlas-tmp/jobs/K2/FRESH/out/results.json`. This report regeneration runs no simulations.
