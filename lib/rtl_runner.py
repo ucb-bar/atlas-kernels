@@ -192,6 +192,13 @@ def table(rows):
 
 
 def report(out, report_path):
+    # Preserve the separately archived streamed-projection experiment.
+    archived = ''
+    if report_path.is_file():
+        previous = report_path.read_text()
+        heading = '## Opt-in streamed SmolVLA projection'
+        if heading in previous:
+            archived = previous[previous.index(heading):].split('## Whole-kit captured programs')[0].rstrip()
     rows = []
     for name in FAMILIES:
         pair = {}
@@ -242,9 +249,56 @@ def report(out, report_path):
         original = 'x'.join(map(str, row.get('original_model_shape', []))) or 'PENDING'
         scope = row.get('case_metadata', {}).get('scope', '')
         lines.append(f"- {row['family']}: source model shape {original}. {row.get('reduction_reason', row.get('note', 'PENDING'))}. {scope} Status: {row['status']}." + (f" Error: {row['error']}" if 'error' in row else ''))
+    if archived:
+        lines += ['', archived]
     report_path.write_text('\n'.join(lines) + '\n')
+    whole_kit_report(report_path)
     save(out / 'summary.json', dict(status='PASS' if all(row['status'] == 'PASS' for row in rows) else 'INCOMPLETE_OR_FAILED', cases=rows))
     return rows
+
+
+
+def whole_kit_report(report_path):
+    """Render archived whole-kit evidence without executing any program."""
+    evidence = json.loads(checked(ROOT / 'coverage/rtl-whole-kit.json').read_text())
+    assert sum(row['programs'] for row in evidence['summary'].values()) == 1589
+    assert all(row['exact'] == row['programs'] and row['mismatched'] == row['pending'] == 0
+               for row in evidence['summary'].values())
+    assert all(set(histogram) == {'0'} for histogram in evidence['cycle_delta_by_family'].values())
+    assert sum(sum(h.values()) for h in evidence['cycle_delta_by_family'].values()) == 1589
+    assert evidence['cycle_delta_definition'] == 'RTL - (Core - 1)'
+    assert evidence['instruction_count_exact'] == 1589 and evidence['output_bytes'] == 364589056
+    assert evidence['synthetic_runs'] == evidence['synthetic_exact'] == 50
+    assert evidence['initial_state_seed'] == 42 and evidence['simulator_qualification_cases'] == 18
+    assert evidence['synthetic_model_family_groups'] == 36 and evidence['verilator_version'] == '5.022'
+    lines = ['## Whole-kit captured programs', '',
+             'All 1,589 distinct TinyLlama, SmolVLA, and ResNet50 kit programs match every physical output byte (364,589,056 bytes, including padding and holes), instruction counts including ECALL, and matched-memory timing. There are 0 mismatches. Inputs are real captured values and linked weights; goldens use full unmodified npu_model Core execution with numerics="rtl" and seed 42. RTL = Core - 1 cycles throughout because Core includes one startup cycle.', '',
+             '| Model | Programs | Exact | Cycle relation |',
+             '| --- | ---: | ---: | --- |']
+    for model, row in evidence['summary'].items():
+        lines.append(f"| {model} | {row['programs']} | {row['exact']} | RTL = Core - 1 |")
+    lines += ['', '| Model / family | Programs | Exact | Cycle relation |',
+              '| --- | ---: | ---: | --- |']
+    for family, histogram in evidence['cycle_delta_by_family'].items():
+        count = sum(histogram.values())
+        lines.append(f'| {family} | {count} | {count} | RTL = Core - 1 |')
+    lines += ['',
+              'The synthetic-memory sample is 50/50 full-byte exact across all 36 model/family groups; its scope is output exactness, without a matched-cycle claim. These are standalone program replays, not whole-model accuracy or SoC performance measurements.', '',
+              f"RTL commit: `{evidence['rtl_revision']}`. Model commit: `{evidence['model_revision']}`. Verilator 5.022 simulator variants (four-thread, spin64, and single-thread) each qualified 18/18 nine-family cases across both memory modes. Executed matched-memory simulator SHA-256 identities:", '']
+    lines += [f'- `{identity}`' for identity in evidence['simulator_sha256']]
+    lines += ['',
+              'The portable [evidence manifest](rtl-whole-kit.json) retains per-model counts, all family cycle histograms, and the source results.json SHA-256. Regenerate this section without simulation with `python3 lib/rtl_runner.py --whole-kit-report-only --out build/report --report coverage/RTL-RESULTS.md`.', '',
+              'To replay each distinct program, use the committed [lib/rtl_runner.py](../lib/rtl_runner.py) custom-program interface in [RTL.md](../RTL.md#run-a-generated-program-and-input-arena): supply its generator assembly, complete captured DRAM arena beginning at 0x90000000 (real tensors and linked weights), output offset and physical byte extent, one runner family label, pinned model checkout, compiler binaries, simulator, and matching build receipt. Use a separate output directory per program, `--memory npu-model`, `--max-cycles 1000000000000`, and `--timeout 14400`; use `--memory synthetic` for the sample. The captured arenas and generated programs are external inputs, not distributed by the compact manifest. No new simulation was run for this documentation update.', '']
+    text = report_path.read_text()
+    heading = '## Whole-kit captured programs'
+    section = '\n'.join(lines).rstrip() + '\n'
+    if heading in text:
+        start = text.index(heading)
+        end = text.find('\n## ', start + len(heading))
+        end = len(text) if end < 0 else end + 1
+        report_path.write_text(text[:start] + section + ('\n' + text[end:] if end < len(text) else ''))
+    else:
+        report_path.write_text(text.rstrip() + '\n\n' + section)
 
 
 def main():
@@ -266,9 +320,13 @@ def main():
     parser.add_argument('--timeout', type=int, default=300)
     parser.add_argument('--report', type=Path)
     parser.add_argument('--report-only', action='store_true')
+    parser.add_argument('--whole-kit-report-only', action='store_true', help='refresh archived whole-kit section without simulation')
     parser.add_argument('--no-report', action='store_true', help='write only per-case receipts for parallel workers')
     args = parser.parse_args()
     args.out = checked(args.out)
+    if args.whole_kit_report_only:
+        whole_kit_report(checked(args.report) if args.report else ROOT / 'coverage/RTL-RESULTS.md')
+        return 0
     if args.no_report and args.report_only:
         parser.error('report-only cannot be combined with no-report')
     selected_rows = []

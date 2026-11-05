@@ -80,3 +80,5 @@ The opt-in [streamed SmolVLA projection](kernels/projection_gemm/SMOL-FAST.md) a
 ## Opt-in TinyLlama fused prefill
 
 The opt-in [TinyLlama fused variant](kernels/projection_gemm/TINY-FAST.md) additionally confirms the full captured 128x2048x2048 SiLU epilogue with matched memory. Its [RTL result](coverage/RTL-RESULTS.md#opt-in-tinyllama-fused-prefill) compares every byte of the complete 4,981,248-byte DRAM arena, including the 524,288-byte output extent. The captured-shape replay uses an authenticated two-worker simulator built from the same pinned generated RTL and memory configuration; an exact isolated fixture checks the threading change.
+
+The [whole-kit result](coverage/RTL-RESULTS.md#whole-kit-captured-programs) covers all 1,589 distinct captured kit programs: 1,589 exact in full output bytes, instruction counts, and matched-memory cycles (RTL = Core - 1), plus 50/50 synthetic-memory output checks. Its generated tables, simulator identities, and reproduction inputs are retained alongside the nine-family baseline.
