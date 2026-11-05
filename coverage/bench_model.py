@@ -37,6 +37,7 @@ import hashlib
 from importlib import metadata
 import json
 from math import prod as product
+import math
 import os
 from pathlib import Path
 import shlex
@@ -147,6 +148,26 @@ def launch_key(family, params):
     return family + ':' + json.dumps(params, sort_keys=True, separators=(',', ':'))
 
 
+def rmsnorm_eps(row, hint):
+    """Keep a captured epsilon, or require the mapping to supply decomposed norm policy."""
+    def number(value):
+        if isinstance(value, bool):
+            raise ValueError('RMSNorm eps must be positive and finite')
+        try:
+            result = float(value)
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError('RMSNorm eps must be positive and finite') from None
+        if not math.isfinite(result) or result <= 0:
+            raise ValueError('RMSNorm eps must be positive and finite')
+        return result
+
+    captured = number(row['eps']) if 'eps' in row else None
+    selected = number(hint['eps']) if 'eps' in hint else captured if captured is not None else 1e-5
+    if captured is not None and selected != captured:
+        raise ValueError(f"RMSNorm eps mismatch for {row['module']}: inventory {captured}, mapping {selected}")
+    return selected
+
+
 def plan(model_summary):
     """Distinct device launches with counts, the rows each covers, and rows that produce no launch."""
     rows = model_summary.get('atlas_rows')
@@ -205,7 +226,8 @@ def plan(model_summary):
                     params = attention_params(row, hint)
                 elif hint['family'] == 'rmsnorm':
                     out = row['outputs'][0][0]
-                    params = dict(rows=product(out[:-1]), m=pad32(product(out[:-1])), width=hint.get('width', out[-1]))
+                    params = dict(rows=product(out[:-1]), m=pad32(product(out[:-1])), width=hint.get('width', out[-1]),
+                                  eps=rmsnorm_eps(row, hint))
                 else:
                     raise ValueError(f"no per-row launch rule for family {hint['family']}")
                 add(hint['family'], params, row['count'], row, 0)
@@ -239,7 +261,8 @@ def launch_matches_shape(entry, row):
     if entry['family'] == 'attention':
         return len(out) == 4 and out[2] == p['rows'] and out[3] in (p['keys'], p['head_dim'])
     if entry['family'] == 'rmsnorm':
-        return len(out) >= 2 and product(out[:-1]) == p['rows']
+        return (len(out) >= 2 and product(out[:-1]) == p['rows']
+                and rmsnorm_eps(row, row_hint(row) or {}) == p.get('eps', 1e-5))
     return True
 
 
@@ -251,7 +274,8 @@ def describe(entry):
             text += f" ({p['mask_pattern']})"
         return text + (' FP8 out' if p['output_fp8'] else '')
     if family == 'rmsnorm':
-        return f"{p['m']}x{p['width']}" + (f" ({p['rows']} rows)" if p['rows'] != p['m'] else '')
+        return (f"{p['m']}x{p['width']}" + (f" ({p['rows']} rows)" if p['rows'] != p['m'] else '')
+                + f" eps={p.get('eps', 1e-5):g}")
     text = f"{p['m']}x{p['k']}x{p['n']}"
     logical = (p['rows'], p['logical_k'], p['logical_n'])
     if logical != (p['m'], p['k'], p['n']):
@@ -299,15 +323,24 @@ def generator(family, arguments, work, model_root):
 
 
 class Projection:
-    """FP32 A ~ N(0, 1), W ~ N(0, 0.02^2), and zero logical padding, with shared result plumbing."""
-    def __init__(self, p, rng):
+    """Synthetic or supplied FP32 physical operands, with shared quantization and result plumbing."""
+    def __init__(self, p, rng, operands=None):
         import numpy as np
         import kernel_bench as bench
         self.m, self.k, self.n = p['m'], p['k'], p['n']
-        self.a = np.zeros((self.m, self.k), dtype=np.float32)
-        self.w = np.zeros((self.k, self.n), dtype=np.float32)
-        self.a[:p['rows'], :p['logical_k']] = rng.standard_normal((p['rows'], p['logical_k']), dtype=np.float32)
-        self.w[:p['logical_k'], :p['logical_n']] = (0.02 * rng.standard_normal((p['logical_k'], p['logical_n']))).astype(np.float32)
+        if operands is None:
+            self.a = np.zeros((self.m, self.k), dtype=np.float32)
+            self.w = np.zeros((self.k, self.n), dtype=np.float32)
+            self.a[:p['rows'], :p['logical_k']] = rng.standard_normal((p['rows'], p['logical_k']), dtype=np.float32)
+            self.w[:p['logical_k'], :p['logical_n']] = (0.02 * rng.standard_normal((p['logical_k'], p['logical_n']))).astype(np.float32)
+        else:
+            if not isinstance(operands, (tuple, list)) or len(operands) != 2:
+                raise ValueError('projection_operands requires an (A, W) pair of physical float32 arrays')
+            self.a, self.w = (np.asarray(value) for value in operands)
+            for name, value, shape in (('A', self.a, (self.m, self.k)), ('W', self.w, (self.k, self.n))):
+                if value.shape != shape or value.dtype != np.float32 or not np.isfinite(value).all():
+                    raise ValueError(f'projection operand {name} must be finite float32 with physical shape {shape}')
+            self.a, self.w = self.a.copy(), self.w.copy()
         self.a_codes, self.a_scale = bench.quantize(self.a)
         self.w_codes, self.w_scale = bench.quantize(self.w)
         self.scale, self.shape = self.a_scale + self.w_scale, f'{self.m}x{self.k}x{self.n}'
@@ -334,11 +367,11 @@ def recipe(m, k, n):
         return None
 
 
-def build_projection_gemm(p, rng, gen):
+def build_projection_gemm(p, rng, gen, *, operands=None):
     import kernel_bench as bench
     from atlas_vector_arithmetic import ordered_matmul, rescale_bf16_array
     reference = bench.load_reference('projection_gemm')
-    projection = Projection(p, rng)
+    projection = Projection(p, rng, operands=operands)
     try:
         source, record = gen('projection_gemm', ['--shape', projection.shape, '--rescale-exponent', str(projection.scale), '--traffic-reuse'])
         variant = f"{record['recipe'].removeprefix('atlas_program_reuse_')} recipe"
@@ -445,9 +478,11 @@ def build_rmsnorm(p, rng, gen):
     h_words = np.zeros((m, width), dtype=np.uint16)
     h_words[:p['rows']] = bench.bf16_words(rng.standard_normal((p['rows'], width), dtype=np.float32))
     gamma_words = bench.bf16_words(1 + 0.1 * rng.standard_normal(width, dtype=np.float32))
-    expected = reference.reference(bench.bf16_values(h_words), bench.bf16_values(gamma_words))
+    eps = p.get('eps', 1e-5)
+    expected = reference.reference(bench.bf16_values(h_words), bench.bf16_values(gamma_words), eps=eps)
     scale = bench.fp8_scale(expected)
-    source, record = gen('rmsnorm', ['--rows', str(m), '--width', str(width), '--norm-scale-exponent', str(scale)])
+    source, record = gen('rmsnorm', ['--rows', str(m), '--width', str(width), '--norm-scale-exponent', str(scale),
+                                   '--eps', str(eps)])
     masks = np.zeros((32, 32, 32), dtype='<u2')
     for i in range(32):
         masks[i, :, i] = 0x3f80
@@ -461,7 +496,8 @@ def build_rmsnorm(p, rng, gen):
     return Built(bench.relocate(source), arena, output_offset, output_bytes, expected,
                  lambda raw: bench.fp8_values(bench.unpack_fp8_tiles(raw, m, width), scale), None,
                  ('streamed tile-row RMSNorm, FP8 out' if record.get('variant') == 'streamed-tile-rows'
-                  else 'standalone norm launch (DMA BF16 rows, RMS post-pass, FP8 out)'), record, dict(output_scale=scale))
+                  else 'standalone norm launch (DMA BF16 rows, RMS post-pass, FP8 out)'), record,
+                 dict(output_scale=scale, eps=eps))
 
 
 def attention_mask(p):
@@ -561,16 +597,20 @@ BUILDERS = {'projection_gemm': build_projection_gemm, 'epilogue': build_epilogue
             'rope': build_rope, 'rmsnorm': build_rmsnorm, 'attention': build_attention, 'smol_fusion': build_smol_fusion}
 
 
-def build(entry, work, model_root):
+def build(entry, work, model_root, *, projection_operands=None):
+    """Stage a launch; supplied projection operands use physical float32 [M,K] and [K,N] arrays."""
     import numpy as np
     family = entry['family']
     if family not in BUILDERS:
         raise NoVariant(f'no model-shape bench builder for family {family}')
+    if projection_operands is not None and family != 'projection_gemm':
+        raise ValueError('projection_operands is supported only for projection_gemm launches')
     rng = np.random.default_rng(seed(entry['key']))
     gen = lambda fam, arguments: generator(fam, arguments, work, model_root)  # noqa: E731
     if family == 'attention':
         return build_attention(entry['params'], rng, gen, work)
-    built = BUILDERS[family](entry['params'], rng, gen)
+    built = (build_projection_gemm(entry['params'], rng, gen, operands=projection_operands)
+             if family == 'projection_gemm' else BUILDERS[family](entry['params'], rng, gen))
     if family in GOLDEN_FAMILIES:
         import kernel_bench as bench
         p = entry['params']

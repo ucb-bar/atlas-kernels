@@ -21,6 +21,41 @@ except ImportError:
 
 @unittest.skipUnless(yaml, 'build_table.py requires PyYAML')
 class BuildTableTest(unittest.TestCase):
+    def test_exported_rmsnorm_eps_survives_aggregation_and_coverage(self):
+        try:
+            import torch
+        except ImportError:
+            self.skipTest('requires PyTorch')
+        class Norms(torch.nn.Module):
+            def forward(self, value):
+                return (torch.nn.functional.rms_norm(value, [32], eps=1e-6),
+                        torch.nn.functional.rms_norm(value, [32], eps=1e-5),
+                        torch.nn.functional.rms_norm(value, [32]))
+        exported = torch.export.export(Norms(), (torch.ones(1, 32),), strict=False)
+        records = []
+        export_ops.walk(exported.graph_module, '', records)
+        norms = [dict(row, phase='inference', step=0) for row in records if row['op'] == 'aten.rms_norm.default']
+        self.assertEqual([row['eps'] for row in norms], [1e-6, 1e-5, torch.finfo(torch.float32).eps])
+        # Force the same location to check that epsilon itself prevents merging.
+        for row in norms:
+            row['source'] = 'norm.py:forward:1'
+        ops = export_ops.aggregate(norms)
+        self.assertEqual(len(ops), 3)
+        inventory = dict(node_count=3, method='unit test', environment={'python': 'test', 'torch': 'test'}, ops=ops)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / 'inventory.json').write_text(json.dumps(inventory))
+            mapping = dict(kernels={'rmsnorm': 'RMSNorm'}, builds={}, rules={'toy': [dict(
+                match={'op': 'aten.rms_norm.default'}, where='atlas:rmsnorm',
+                launch=dict(family='rmsnorm', per={'op': 'aten.rms_norm.default'}))]})
+            (root / 'mapping.yaml').write_text(yaml.safe_dump(mapping))
+            subprocess.run([sys.executable, '-B', str(COVERAGE / 'build_table.py'), '--inventory',
+                            f'toy={root / "inventory.json"}', '--mapping', str(root / 'mapping.yaml'),
+                            '--out', str(root / 'out')], check=True, capture_output=True, text=True)
+            summary = json.loads((root / 'out' / 'coverage.json').read_text())
+            self.assertEqual([row['eps'] for row in summary['models']['toy']['atlas_rows']],
+                             [1e-6, 1e-5, torch.finfo(torch.float32).eps])
+
     def test_capture_failure_fails_cli_and_not_run_is_distinct(self):
         inventory = json.loads((COVERAGE / 'fixture' / 'tinyllama.json').read_text())
         with tempfile.TemporaryDirectory() as directory:

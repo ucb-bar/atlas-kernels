@@ -27,7 +27,7 @@ REQUIRED_LAUNCHES = {
 }
 
 
-ATLAS_ROW_FIELDS = ('phase', 'module', 'source', 'op', 'component', 'inputs', 'outputs', 'count', 'flops_each', 'where', 'rule')
+ATLAS_ROW_FIELDS = ('phase', 'module', 'source', 'op', 'component', 'inputs', 'outputs', 'eps', 'count', 'flops_each', 'where', 'rule')
 
 
 def patterns(value):

@@ -171,6 +171,10 @@ def walk(graph_module, strip, records, inherited=None):
         outputs = tensors(node.meta.get('val'))
         records.append({'index': len(records), 'op': op, 'module': module, 'call': call, 'source': source(node),
                         'inputs': inputs, 'outputs': outputs, 'flops': flops(op, inputs, outputs)})
+        if op == 'aten.rms_norm.default':
+            eps = node.kwargs.get('eps', node.args[3] if len(node.args) > 3 else None)
+            # PyTorch's omitted epsilon is the input dtype's machine epsilon.
+            records[-1]['eps'] = float(eps) if eps is not None else torch.finfo(getattr(torch, inputs[0][1])).eps
         bias = bias_flops(op, inputs, outputs)
         if bias:
             records[-1]['bias_flops'] = bias
@@ -187,12 +191,14 @@ def aggregate(records):
     groups, calls = OrderedDict(), 0
     for row in records:
         name, layer = template(row['module'])
-        key = json.dumps([row['phase'], name, row['source'], row['op'], row['inputs'], row['outputs']])
+        key = json.dumps([row['phase'], name, row['source'], row['op'], row['inputs'], row['outputs'], row.get('eps')])
         item = groups.setdefault(key, {'phase': row['phase'], 'module': name, 'source': row['source'],
                                        'op': row['op'], 'inputs': row['inputs'],
                                        'outputs': row['outputs'], 'flops_each': row['flops'], 'count': 0,
                                        'layers': set(), 'steps': set()})
         item['count'] += 1
+        if 'eps' in row:
+            item['eps'] = row['eps']
         if row.get('bias_flops'):
             item['bias_flops_each'] = row['bias_flops']
         if layer is not None:

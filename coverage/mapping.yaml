@@ -19,7 +19,7 @@
 #   fuse_into: [module]     the rows run inside the panels of these projection modules (same phase), which bench
 #                           as this family's fused program instead of a plain projection_gemm panel
 #   rows: {match}           the hint covers only these rows of the rule (default: all of them)
-# plus family parameters (kv_heads, mask, masks, output_fp8, steps, output, consumer_width, operations). It may be a
+# plus family parameters (kv_heads, mask, masks, output_fp8, steps, output, consumer_width, operations, eps). It may be a
 # list of hints. Linear and Conv2d rows on atlas:projection_gemm need no hint; bench.<model> gives their panel split.
 #
 # Citations name files at atlas-mlir 8259b83 (atlas-mlir:), Merlin 55bc82d9 (merlin:), atlas-kernels

@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).absolute().parents[2]))
 import atlas_kernels_path  # noqa: E402,F401
 from kernel_gen import parser, write  # noqa: E402
 from atlas_norm_postpass import standalone_source  # noqa: E402
+from atlas_rmsnorm_tiled import epsilon_bits  # noqa: E402
 
 WIDTH, MASK_BYTES = 2048, 65536
 args = parser(__doc__)
@@ -24,7 +25,8 @@ output_offset, output_bytes = 2 * m * width, m * width
 mask_offset = output_offset + output_bytes + 256
 source = standalone_source(m, width, mask_offset, mask_offset + MASK_BYTES, args.norm_scale_exponent, eps=args.eps)
 record = dict(family="rmsnorm", rows=m, width=width, output_offset=output_offset,
-              mask_offset=mask_offset, weight_offset=mask_offset + MASK_BYTES)
+              mask_offset=mask_offset, weight_offset=mask_offset + MASK_BYTES,
+              eps=args.eps, eps_bf16_bits=epsilon_bits(args.eps))
 if width not in (960, 2048) or args.eps != 1e-5:
     record['variant'] = 'streamed-tile-rows'
 write(args, f"rmsnorm-{m}x{width}", source, record)

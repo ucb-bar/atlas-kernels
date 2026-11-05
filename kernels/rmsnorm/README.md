@@ -6,7 +6,7 @@ Stage: a post-pass. TinyLlama runs it as a standalone launch that first DMAs the
 
 ## Entry points
 
-- `atlas_rmsnorm_tiled.py`: `standalone_source(rows, width, mask_offset, weight_offset, scale=-8)` returns unrelocated assembly for widths rejected by the pinned RMS post-pass. It streams one 32-row BF16 tile row at a time, accumulates statistics in groups of at most 32 column tiles, and writes natural FP8 tiles at byte offset `2 * rows * width`. `gen.py` selects it for widths other than 960 and 2048.
+- `atlas_rmsnorm_tiled.py`: `standalone_source(rows, width, mask_offset, weight_offset, scale=-8, *, eps=1e-5)` returns unrelocated assembly for widths rejected by the pinned RMS post-pass. It streams one 32-row BF16 tile row at a time, accumulates statistics in groups of at most 32 column tiles, and writes natural FP8 tiles at byte offset `2 * rows * width`. `gen.py` selects it for widths other than 960 and 2048, and for nondefault epsilon.
 - `atlas_rmsnorm_postpass.py`: `ResidentRMSNormEpilogue`, an `Epilogue` with `norm_weight_offset` (BF16 gamma), `norm_mask_offset`, and `norm_scale_exponent` (default -8, the FP8 output scale); `postpass(epilogue)` returns the post-pass instructions and `append_postpass(source, epilogue)` appends them to a producer program. This is the original 128x2048 RMSNorm prototype.
 - `atlas_norm_postpass.py`: `ResidentNormEpilogue` extends it with `norm_kind` (`"rms"` or `"layer"`), `real_n` (logical width; padded columns of `h` and gamma must be zero), and `norm_bias_offset` (LayerNorm beta), with the original 2048-wide RMS path unchanged. Its `postpass` and `append_postpass` have the same contract. Only m10/m11 and m12/m13 hold statistics.
 
@@ -20,9 +20,12 @@ TinyLlama RMSNorm, width 2048, after the attention and MLP residuals: 128 rows i
 make gen-rmsnorm NPU_MODEL=/path/to/npu-model ARGS="--rows 128"
 make gen-rmsnorm NPU_MODEL=/path/to/npu-model ARGS="--rows 32"
 make gen-rmsnorm NPU_MODEL=/path/to/npu-model ARGS="--rows 128 --width 4096"
+make gen-rmsnorm NPU_MODEL=/path/to/npu-model ARGS="--rows 32 --width 1536 --eps 1e-6"
 ```
 
 `gen.py` admits rows 32 or 128 and positive widths divisible by 32 through 7136. Widths 960 and 2048 retain the pinned resident path, including byte-identical 2048-wide programs. Other widths use the separate standalone path. The standalone generator requires logical width to equal physical width; `--eps` (API `eps=`) defaults to 1e-5 and rounds FP32 to a finite normal BF16 immediate with ties to even, rejecting nonpositive, nonfinite, underflowing, or overflowing values; nondefault epsilon selects the streamed path, leaving resident programs pinned. The DRAM arena remains BF16 H, FP8 output, a 256-byte guard, 65536 mask bytes, and `64 * width` broadcast gamma bytes.
+
+Generator JSON records `eps` and `eps_bf16_bits`. The FP32 reference accepts `reference(h, gamma, eps=...)`, and shared bench cases accept `spec['eps']`, both defaulting to 1e-5. The FP32 reference uses the requested epsilon, while the device uses the rounded BF16 immediate. Model coverage carries epsilon through the launch hint or direct exported RMSNorm row; see the [coverage guide](../../coverage/README.md#adding-a-model).
 
 The streamed layout uses the default 1572864-byte VMEM: H starts at byte 524288 and occupies `64 * width` bytes, masks start at byte 1048576, gamma starts at byte 1114112, and the 2048-byte output staging region starts at byte 1570816. Gamma must end by staging, giving width 7136. This is the current generator layout capacity; wider rows could use another streaming layout.
 

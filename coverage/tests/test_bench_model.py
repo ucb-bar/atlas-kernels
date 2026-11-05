@@ -122,6 +122,33 @@ class PlanTest(unittest.TestCase):
         self.assertEqual([row['op'] for row in uncovered], ['aten.mul.Tensor'])
         self.assertEqual(sorted(entry['family'] for entry in launches), ['projection_gemm', 'rmsnorm'])
 
+    def test_rmsnorm_epsilon_identity_source_mapping_and_default(self):
+        model = toy_model()['models']['toy']
+        original = model['atlas_rows'][1]
+        original['outputs'][0][0][-1] = 1536
+        original['inputs'][0][0][-1] = 1536
+        default, = [entry for entry in bench_model.plan(model)[0] if entry['family'] == 'rmsnorm']
+        self.assertEqual(default['params']['eps'], 1e-5)
+        source = copy.deepcopy(original)
+        source['eps'] = 1e-6
+        model['atlas_rows'].append(source)
+        launches = [entry for entry in bench_model.plan(model)[0] if entry['family'] == 'rmsnorm']
+        self.assertEqual({entry['params']['eps'] for entry in launches}, {1e-5, 1e-6})
+        self.assertEqual(len({entry['key'] for entry in launches}), 2)
+        self.assertEqual({entry['flops'] for entry in launches}, {2048})
+        selected = copy.deepcopy(original)
+        selected['launch']['eps'] = '1e-6'  # YAML permits a scientific-notation scalar string.
+        model['atlas_rows'] = [selected]
+        mapped, = bench_model.plan(model)[0]
+        self.assertEqual(mapped['params']['eps'], 1e-6)
+        self.assertIn('eps=1e-06', bench_model.describe(mapped))
+        selected['eps'] = 1e-5
+        with self.assertRaisesRegex(ValueError, 'eps mismatch'):
+            bench_model.plan(model)
+        for invalid in (True, None, 0, -1e-6, float('nan'), float('inf'), 'invalid'):
+            with self.subTest(eps=invalid), self.assertRaisesRegex(ValueError, 'eps'):
+                bench_model.rmsnorm_eps({}, {'eps': invalid})
+
     def test_plan_only_lists_unmapped_ops(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'coverage.json'
@@ -322,6 +349,80 @@ class PlanTest(unittest.TestCase):
 
 @unittest.skipUnless(CAN_RUN, 'needs NumPy, PyTorch, and npu_model (ATLAS_NPU_MODEL_ROOT)')
 class RunTest(unittest.TestCase):
+    def test_rmsnorm1536_qwen_epsilon_functional_and_timed_agree(self):
+        import numpy as np
+        sys.path.insert(0, str(COVERAGE.parent))
+        import atlas_kernels_path  # noqa: F401
+        import kernel_bench as bench
+        from atlas_execution import Executor
+        params = dict(rows=1, m=32, width=1536, eps=1e-6)
+        entry = dict(family='rmsnorm', key=bench_model.launch_key('rmsnorm', params), params=params)
+        with tempfile.TemporaryDirectory() as temporary:
+            built = bench_model.build(entry, Path(temporary), MODEL_ROOT)
+        self.assertIn('vli.all m6, 13702', built.source)
+        self.assertEqual(built.generator['eps'], 1e-6)
+        self.assertEqual(built.generator['eps_bf16_bits'], 0x3586)
+        result = Executor(MODEL_ROOT).execute(built.source, built.arena, built.output_offset, built.output_bytes)
+        fidelity = bench.fidelity(built.decode(result.output), built.reference)
+        self.assertGreater(fidelity['cosine'], 0.99)
+        self.assertLess(fidelity['relative_error'], 0.1)
+        cycles, timed = bench.timed_cycles(MODEL_ROOT, built.source, built.arena, 1_000_000)
+        self.assertGreater(cycles, 0)
+        self.assertEqual(timed[built.output_offset:built.output_offset + built.output_bytes], result.output)
+        self.assertIsNone(built.golden)
+
+    def test_rmsnorm_epsilon_reaches_reference_and_generator(self):
+        import numpy as np
+        sys.path.insert(0, str(COVERAGE.parent))
+        import atlas_kernels_path  # noqa: F401
+        import kernel_bench as bench
+        from atlas_norm_postpass import standalone_source
+        reference = bench.load_reference('rmsnorm')
+        p = dict(rows=1, m=32, width=1536, eps=1e-6)
+        record = dict(output_offset=98304, mask_offset=147712, weight_offset=213248,
+                      variant='streamed-tile-rows')
+        source = standalone_source(32, 1536, record['mask_offset'], record['weight_offset'], -8, eps=1e-6)
+        generator = mock.Mock(return_value=(source, record))
+        # Small operands make the epsilon materially affect the FP32 expectation.
+        class SmallInputs:
+            def standard_normal(self, shape, **kwargs):
+                return np.full(shape, 0.001, dtype=np.float32)
+        built = bench_model.build_rmsnorm(p, SmallInputs(), generator)
+        args = generator.call_args.args[1]
+        self.assertEqual(args[args.index('--eps') + 1], '1e-06')
+        self.assertEqual(built.meta['eps'], 1e-6)
+        h = np.zeros((32, 1536), dtype=np.float32)
+        h[:1] = bench.bf16_values(bench.bf16_words(np.full((1, 1536), 0.001, dtype=np.float32)))
+        gamma = np.ones(1536, dtype=np.float32)
+        np.testing.assert_array_equal(built.reference, reference.reference(h, gamma, eps=1e-6))
+        self.assertFalse(np.array_equal(built.reference, reference.reference(h, gamma)))
+        self.assertIsNone(built.golden)
+
+    def test_supplied_projection_operands_use_shared_reference_and_independent_golden(self):
+        import numpy as np
+        sys.path.insert(0, str(COVERAGE.parent))
+        import atlas_kernels_path  # noqa: F401
+        import kernel_bench as bench
+        from atlas_execution import Executor
+        entry, = [item for item in bench_model.plan(toy_model()['models']['toy'])[0]
+                  if item['family'] == 'projection_gemm']
+        p = entry['params']
+        a = np.zeros((p['m'], p['k']), dtype=np.float32)
+        w = np.zeros((p['k'], p['n']), dtype=np.float32)
+        a[:p['rows']] = np.linspace(-1, 1, p['rows'] * p['k'], dtype=np.float32).reshape(p['rows'], p['k'])
+        w[:] = np.linspace(-0.125, 0.125, p['k'] * p['n'], dtype=np.float32).reshape(p['k'], p['n'])
+        with tempfile.TemporaryDirectory() as temporary:
+            built = bench_model.build(entry, Path(temporary), MODEL_ROOT, projection_operands=(a, w))
+        np.testing.assert_allclose(built.reference, a @ w)
+        result = Executor(MODEL_ROOT).execute(built.source, built.arena, built.output_offset, built.output_bytes)
+        self.assertTrue(bench_model.compare(built, result.output, built.golden())['bit_exact'])
+        self.assertEqual(built.meta['a_scale'], bench.quantize(a)[1])
+        for operands in ((a[:1], w), (a.astype(np.float64), w), (a, w[:, :1]), (a,), (a * np.nan, w)):
+            with self.subTest(shapes=[value.shape for value in operands]), self.assertRaisesRegex(ValueError, 'operand'):
+                bench_model.Projection(p, None, operands=operands)
+        with self.assertRaisesRegex(ValueError, 'only for projection_gemm'):
+            bench_model.build(dict(family='rmsnorm'), Path('.'), MODEL_ROOT, projection_operands=(a, w))
+
     def test_resume_regenerates_identity_and_reruns_stale_words(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'coverage.json'
@@ -365,7 +466,7 @@ class RunTest(unittest.TestCase):
             out = Path(tmp) / 'out'
             # Tool-discovery environment variables must not opt an ordinary bench into compilation.
             with mock.patch.dict(os.environ, {'ATLAS_MLIR_BIN': str(Path(tmp) / 'missing-compiler')}):
-                status = bench_model.main(['--coverage', str(path), '--model-root', MODEL_ROOT, '--out', str(out), '--workers', '4'])
+                status = bench_model.main(['--coverage', str(path), '--model-root', MODEL_ROOT, '--out', str(out), '--workers', '2'])
             self.assertEqual(status, 0)
             document = json.loads((out / 'MODEL-BENCH.json').read_text())
             rows = {row['family']: row for row in document['launches']}
