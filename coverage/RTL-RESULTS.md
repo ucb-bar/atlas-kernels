@@ -39,3 +39,9 @@ Decode RoPE's independent golden is compared over its logical row. It differs in
 - smol_fusion: source model shape 128x768x3072. smallest qualified traffic-reuse contraction; retains the family fused operation.  Status: PASS.
 - resnet_pool: source model shape 64x112x112. one full output tile with two output rows and boundary padding.  Status: PASS.
 - resnet_patch_gather: source model shape 64x56x56. existing 3x3 gather execution-test geometry, padded rows, and VMEM bank jump; excludes GEMM. 3x3 gather_block only; excludes following projection GEMM Status: PASS.
+
+## Opt-in streamed SmolVLA projection
+
+The new `atlas_program_smol_projection_fast` full captured 128x768x768 projection passes pinned matched-memory RTL. Original RTL cycles are 1,077,911, and candidate cycles are 774,449, saving 303,462. Corresponding Core counts are 1,077,912 and 774,450. All 196,608 output bytes match the captured reference. The new run validates all 27,648 requests and responses against the unchanged model backend. Original results are authenticated reuse of an identical program, input, expected output, simulator, and build, with a newly revalidated archived DMA trace. No fresh original RTL simulation is claimed.
+
+RTL pin is `0079c0541111197741a231c002e3843fa6f545b2`, and simulator SHA-256 is `a568f3820eeb9dae1601a948353d040670bb622e63e2a72c14bd4b24ebe35c86`. The candidate is compiler tier `verified`. The [variant guide](../kernels/projection_gemm/SMOL-FAST.md) and [result manifest](smol-projection-results.json) join the numerical, compiler, timing, and RTL receipts. Functional execution checks full arenas, while RTL dumps and compares the complete output extent. Other shapes have model validation and retain PENDING RTL status.
