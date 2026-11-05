@@ -2,15 +2,18 @@
 
 Translator tests need nothing beyond Python. Backend tests need atlas-opt and
 atlas-emit (ATLAS_MLIR_BIN, ATLAS_OOT_BIN_DIR, or PATH); assembler comparisons
-also need npu_model 47b8599 on PYTHONPATH. Missing tools skip, never pass.
+also need npu_model 47b8599 on PYTHONPATH. Missing unconfigured tools skip;
+explicit compiler configuration must be complete.
 """
 
 import io
 import os
 from pathlib import Path
 import re
+import runpy
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).absolute().parents[2]))
 import atlas_kernels_path  # noqa: E402,F401
@@ -19,9 +22,14 @@ import atlas_asm_mlir as t  # noqa: E402
 import atlas_backend  # noqa: E402
 
 try:
+    for variable in ('ATLAS_MLIR_BIN', 'ATLAS_OOT_BIN_DIR'):
+        if variable in os.environ and not os.environ[variable]:
+            raise atlas_backend.BackendUnavailable(f'{variable} must not be empty')
     atlas_backend.tools()
     TOOLS = True
 except atlas_backend.BackendUnavailable:
+    if any(variable in os.environ for variable in ('ATLAS_MLIR_BIN', 'ATLAS_OOT_BIN_DIR')):
+        raise
     TOOLS = False
 
 try:
@@ -38,6 +46,21 @@ def fields(text):
 
 
 class TranslatorTest(unittest.TestCase):
+    def test_explicit_configuration_rejects_missing_tools(self):
+        with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(
+                atlas_backend, 'tools', side_effect=atlas_backend.BackendUnavailable('missing tools')):
+            self.assertFalse(runpy.run_path(__file__)['TOOLS'])
+            for variable in ('ATLAS_MLIR_BIN', 'ATLAS_OOT_BIN_DIR'):
+                for value in ('', '/nonexistent'):
+                    with self.subTest(variable=variable, value=value), mock.patch.dict(os.environ, {variable: value}):
+                        with self.assertRaises(atlas_backend.BackendUnavailable):
+                            runpy.run_path(__file__)
+            with mock.patch.object(atlas_backend, 'tools', return_value=atlas_backend.Tools('opt', 'emit')):
+                for variable in ('ATLAS_MLIR_BIN', 'ATLAS_OOT_BIN_DIR'):
+                    with mock.patch.dict(os.environ, {variable: ''}), self.assertRaisesRegex(
+                            atlas_backend.BackendUnavailable, variable):
+                        runpy.run_path(__file__)
+
     def test_li_matches_the_assembler_expansion(self):
         self.assertEqual(fields('li x5, 17'), [('atlas.alu_imm', dict(kind='addi', dst=5, src=0, immediate=17))])
         self.assertEqual(fields('li x5, -2048'), [('atlas.alu_imm', dict(kind='addi', dst=5, src=0, immediate=-2048))])

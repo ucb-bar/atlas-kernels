@@ -5,6 +5,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import runpy
 import subprocess
 import sys
 import tempfile
@@ -17,9 +18,14 @@ sys.path.insert(0, str(COVERAGE))
 import bench_model  # noqa: E402
 
 MODEL_ROOT = os.environ.get('ATLAS_NPU_MODEL_ROOT')
-CAN_RUN = bool(MODEL_ROOT) and all(importlib.util.find_spec(name) for name in ('numpy', 'torch', 'npu_model'))
+CAN_RUN = bool(MODEL_ROOT) and Path(MODEL_ROOT).is_dir() and all(
+    importlib.util.find_spec(name) for name in ('numpy', 'torch', 'npu_model'))
+if 'ATLAS_NPU_MODEL_ROOT' in os.environ and not CAN_RUN:
+    raise RuntimeError('ATLAS_NPU_MODEL_ROOT requires a model directory and importable NumPy, PyTorch, and npu_model')
 MLIR_BIN = os.environ.get('ATLAS_MLIR_BIN')
 CAN_COMPILE = bool(MLIR_BIN) and all((Path(MLIR_BIN) / name).is_file() for name in ('atlas-opt', 'atlas-emit'))
+if 'ATLAS_MLIR_BIN' in os.environ and not CAN_COMPILE:
+    raise RuntimeError('ATLAS_MLIR_BIN requires a nonempty directory containing atlas-opt and atlas-emit')
 
 
 def linear(module, m, k, n, **extra):
@@ -68,6 +74,16 @@ def execute_jobs(entry, args, callback, context=None):
 
 
 class PlanTest(unittest.TestCase):
+    def test_explicit_configuration_rejects_missing_prerequisites(self):
+        with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(importlib.util, 'find_spec', return_value=None):
+            optional = runpy.run_path(__file__)
+            self.assertFalse(optional['CAN_RUN'] or optional['CAN_COMPILE'])
+            for variable in ('ATLAS_NPU_MODEL_ROOT', 'ATLAS_MLIR_BIN'):
+                for value in ('', '/nonexistent', str(COVERAGE)):
+                    with self.subTest(variable=variable, value=value), mock.patch.dict(os.environ, {variable: value}):
+                        with self.assertRaisesRegex(RuntimeError, variable):
+                            runpy.run_path(__file__)
+
     def test_focus_models_reproduce_kit_launch_counts(self):
         summary = json.loads((COVERAGE / 'coverage.json').read_text())
         for model, expected in (('tinyllama', dict(projection_panels=840, attention=66, rmsnorm=132)),

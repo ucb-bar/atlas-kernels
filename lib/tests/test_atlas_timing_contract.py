@@ -201,9 +201,29 @@ class ContractTest(unittest.TestCase):
 
     def real_tools(self):
         try:
+            for variable in ('ATLAS_MLIR_BIN', 'ATLAS_OOT_BIN_DIR'):
+                if variable in os.environ and not os.environ[variable]:
+                    raise backend.BackendUnavailable(f'{variable} must not be empty')
             return backend.tools()
         except backend.BackendUnavailable:
+            if any(variable in os.environ for variable in ('ATLAS_MLIR_BIN', 'ATLAS_OOT_BIN_DIR')):
+                raise
             self.skipTest('atlas-opt and atlas-emit not found')
+
+    def test_explicit_configuration_rejects_missing_tools(self):
+        with patch.dict(os.environ, {}, clear=True), patch.object(
+                backend, 'tools', side_effect=backend.BackendUnavailable('missing tools')):
+            with self.assertRaises(unittest.SkipTest):
+                self.real_tools()
+            for variable in ('ATLAS_MLIR_BIN', 'ATLAS_OOT_BIN_DIR'):
+                for value in ('', '/nonexistent'):
+                    with self.subTest(variable=variable, value=value), patch.dict(os.environ, {variable: value}):
+                        with self.assertRaises(backend.BackendUnavailable):
+                            self.real_tools()
+            with patch.object(backend, 'tools', return_value=backend.Tools('opt', 'emit')):
+                for variable in ('ATLAS_MLIR_BIN', 'ATLAS_OOT_BIN_DIR'):
+                    with patch.dict(os.environ, {variable: ''}), self.assertRaisesRegex(backend.BackendUnavailable, variable):
+                        self.real_tools()
 
     def input_word(self, value):
         contents = value.to_bytes(4, 'little') + bytes(28)
