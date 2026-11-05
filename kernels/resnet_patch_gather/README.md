@@ -25,5 +25,3 @@ make gen-resnet_patch_gather NPU_MODEL=/path/to/npu-model ARGS="--input 64x56x56
 ## Tests and checks
 
 `tests/test_resnet_direct_input.py` checks address bounds, the kxk geometry and weight order, and, with `NPU_MODEL`, that a gathered block executed on npu_model `47b8599` equals the host patches. `kernels/projection_gemm/tests/test_program_checks.py` checks register admission with direct input.
-
-The shared [per-family make interface](../README.md) provides `gen`, `data`, `test`, and explicitly provisioned `rtl` targets for this family, with generated payloads in ignored output directories and reference gaps recorded as PENDING.

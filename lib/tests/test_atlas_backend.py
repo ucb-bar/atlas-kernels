@@ -143,9 +143,10 @@ class SourceIdentityTest(unittest.TestCase):
                 else:
                     self.fail('descended into restricted tree')
                 return subprocess.CompletedProcess(argv, 0, stdout=raw)
-            with patch('atlas_backend.subprocess.run', side_effect=command):
+            with patch('atlas_backend.subprocess.run', side_effect=command) as process:
                 result = atlas_backend._build_source(build)
             self.assertEqual(visited, ['HEAD', child])
+            self.assertEqual(process.call_count, 3)
             self.assertFalse(result['modified'])
 
     def test_manifest_tracks_working_bytes_and_missing_symlinks(self):

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from atlas_epilogue import Epilogue
 from atlas_program_checks import check_matrix_registers
 from atlas_resident_output import retain_output, RESIDENT_H_WORD
-from atlas_rmsnorm_postpass import _load_pair
+from atlas_rmsnorm_postpass import _append_postpass, _load_pair
 from atlas_rne_add import CONSTANTS, rne_add
 
 EXTRA_WORD = 1048576 // 4
@@ -94,10 +94,4 @@ def postpass(e):
 
 
 def append_postpass(source, epilogue):
-    check_matrix_registers(source)
-    lines = source.rstrip().splitlines()
-    if not lines or lines[-1] != 'ecall' or lines.count('ecall') != 1:
-        raise ValueError('expected one final ECALL')
-    result = '\n'.join(lines[:-1] + postpass(epilogue) + ['ecall']) + '\n'
-    check_matrix_registers(result)
-    return result
+    return _append_postpass(source, epilogue, postpass)

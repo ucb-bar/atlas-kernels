@@ -6,8 +6,7 @@ Kernel generators and shared helpers import one another by module basename
 Python modules to ``sys.path`` once. Basenames are unique across the library,
 so ``module_path(name)`` names the one file that defines a module.
 
-The generators are byte-identical to the sources that model receipts pin, so
-two of them still import atlas-mlir host helpers: ``atlas_program`` imports
+Two generators still import atlas-mlir host helpers: ``atlas_program`` imports
 ``run_model_tile.validate_archive_members`` and the Smol fusion generators import
 ``chipyard.arena.relocate_assembly``. When atlas-mlir's ``tools/`` is importable
 those real modules are used. Otherwise (this repository on its own) a finder

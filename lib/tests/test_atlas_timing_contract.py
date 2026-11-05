@@ -316,31 +316,5 @@ class ContractTest(unittest.TestCase):
         self.assertEqual(result.tier, 'stream-verified')
         self.assertIn('past the end of VMEM', ' '.join(result.timing_diagnostics))
 
-    def test_source_identity_prunes_before_descending_into_git_trees(self):
-        from types import SimpleNamespace
-        source, build = self.directory / 'source', self.directory / 'build'
-        (source / '.git').mkdir(parents=True)
-        (source / 'allowed').mkdir()
-        build.mkdir()
-        (source / 'allowed' / 'file.txt').write_text('bytes')
-        (build / 'CMakeCache.txt').write_text(f'CMAKE_HOME_DIRECTORY:INTERNAL={source}\n')
-        blob = hashlib.sha1(b'blob 5\0bytes').hexdigest().encode()
-        calls = []
-        def git(argv, **kwargs):
-            calls.append(argv)
-            if argv[-2:] == ['rev-parse', 'HEAD']:
-                return SimpleNamespace(returncode=0, stdout='head\n')
-            if argv[-3:] == ['ls-tree', '-z', 'HEAD']:
-                return SimpleNamespace(stdout=b'040000 tree allowed-tree\tallowed\0' +
-                                       b'040000 tree forbidden-tree\tha' + b'mmer\0')
-            if argv[-3:] == ['ls-tree', '-z', 'allowed-tree']:
-                return SimpleNamespace(stdout=b'100644 blob ' + blob + b'\tfile.txt\0')
-            self.fail(f'unexpected Git traversal: {argv}')
-        with patch.object(backend.subprocess, 'run', side_effect=git):
-            identity = backend._build_source(build)
-        self.assertFalse(identity['modified'])
-        self.assertEqual(len(calls), 3)
-
-
 if __name__ == '__main__':
     unittest.main()

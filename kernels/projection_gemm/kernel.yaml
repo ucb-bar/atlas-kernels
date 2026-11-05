@@ -104,6 +104,6 @@ variants:
       - {model: smolvla, mkn: [64, 736, 32], panels: 10, modules: action_out_proj}
     note: any multiple-of-32 shape within VMEM and DRAM bounds; used when traffic_reuse is false or no recipe admits the shape
 generator: "make gen-projection_gemm ARGS=\"--shape MxKxN [--traffic-reuse | --resident-a | --resident-b] [--rescale-exponent E]\""
-tests: ["tests/test_program_reuse_*.py", tests/test_program_reuse_proof.py, tests/test_program_resident.py, tests/test_program_checks.py, tests/test_program_legacy_epilogue.py]
+tests: [tests/test_program_reuse_resident.py, tests/test_program_resident.py, tests/test_program_checks.py, tests/test_program_legacy_epilogue.py]
 checks: [checked_assembly register admission, symbolic reuse proofs (tests/reuse_proof.py), frozen default-program SHA-256, every model launch executed on npu_model 47b8599 numerics=rtl by the atlas-mlir capture and export flows]
 run_tests: "make test-projection_gemm NPU_MODEL=<npu_model 47b8599 checkout>"

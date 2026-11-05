@@ -110,12 +110,16 @@ def postpass(epilogue):
     return lines
 
 
-def append_postpass(source, epilogue):
-    """Replace only the final ECALL, retaining the original recipe verbatim."""
+def _append_postpass(source, epilogue, fragment):
     check_matrix_registers(source)
     lines = source.rstrip().splitlines()
     if not lines or lines[-1] != "ecall" or lines.count("ecall") != 1:
         raise ValueError("expected one final ECALL")
-    result = "\n".join(lines[:-1] + postpass(epilogue) + ["ecall"]) + "\n"
+    result = "\n".join(lines[:-1] + fragment(epilogue) + ["ecall"]) + "\n"
     check_matrix_registers(result)
     return result
+
+
+def append_postpass(source, epilogue):
+    """Replace only the final ECALL, retaining the original recipe verbatim."""
+    return _append_postpass(source, epilogue, postpass)

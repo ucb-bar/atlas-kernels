@@ -1,5 +1,7 @@
 # Atlas Kernels
 
+Kernels written for the [Atlas NPU](https://github.com/ucb-bar/atlas-npu).
+
 Device-kernel generators for the Atlas NPU, with the shared helpers and golden references that check them. Each generator is a Python module that emits Atlas assembly text for one launch; npu_model's assembler encodes it, and programs are checked bit-exactly against unmodified npu_model `47b8599` with `numerics="rtl"`. The library holds every kernel that the TinyLlama, SmolVLA, and ResNet50 bringups launch. [atlas-mlir](https://github.com/ucb-bar/atlas-mlir) pins it as the `third_party/atlas-kernels` submodule and builds host programs, captures, and ELFs on top of it.
 
 The generators are hand-written schedules in Python; no kernel is lowered from the Atlas MLIR dialect yet. `lib/atlas_backend.py run --backend atlas-mlir` adds an enforcing comparison gate around the assembler path: it translates assembly to machine IR, runs `atlas-opt` verifiers and `atlas-emit`, and refuses any program whose words differ from the assembler's. The wrapper returns the assembler-produced program. Host graphs (the C that sequences launches and runs host-side operators) live in atlas-mlir and Merlin, not here.
@@ -39,30 +41,7 @@ coverage/               per-model coverage (COVERAGE.md), the standalone bench t
 
 ### Module names
 
-The generator modules keep the file names they had in atlas-mlir `tools/`, because model receipts and source pins name them and require their exact bytes. This table maps each name to its role.
-
-| Module | Family | Role |
-| --- | --- | --- |
-| `atlas_program.py` | projection_gemm | GEMM entry point: `assembly`, `dma_load_bytes`, recipe dispatch, legacy hook entry point |
-| `atlas_program_reuse_common.py` | projection_gemm | shared resident-column load and ordered BF16 output store |
-| `atlas_program_reuse_tiny.py` | projection_gemm | TinyLlama prefill K 2048 recipe |
-| `atlas_program_reuse_tiny_breadth.py` | projection_gemm | TinyLlama down projection and decode recipe |
-| `atlas_program_reuse_resident.py` | projection_gemm | resident-A recipe (SmolVLA vision 128x768x768) |
-| `atlas_program_reuse_stream.py` | projection_gemm | two-bank A, streamed B recipe (SmolVLA fc2) |
-| `atlas_program_reuse_smol_connector.py` | projection_gemm | SmolVLA connector recipe |
-| `atlas_program_reuse_blocked.py` | projection_gemm | bank-bounded blocked recipe (SmolVLA text, expert, and ResNet50 shapes) |
-| `atlas_epilogue.py` | epilogue | `Epilogue`, `Step`, `TileInput` |
-| `atlas_resident_output.py` | epilogue | BF16 output retention for post-passes |
-| `atlas_rne_add.py` | rne_add | exact BF16 add sequence |
-| `atlas_rmsnorm_postpass.py`, `atlas_norm_postpass.py` | rmsnorm | RMSNorm prototype and its RMS/LayerNorm extension |
-| `atlas_rope_postpass.py` | rope | RoPE post-pass |
-| `atlas_attention_v2_program.py`, `atlas_attention_program.py`, `atlas_attention_wide_program.py`, `atlas_attention_v2_halt.py` | attention | pinned v2 and v1, wide heads, and opt-in v2 halt variant |
-| `smol_fusion_program.py`, `smol_fusion_fp8.py` | smol_fusion | fused SmolVLA panels and the FP8 fc1 producer |
-| `atlas_resnet_pool.py` | resnet_pool | max pool |
-| `atlas_resnet_input.py` | resnet_patch_gather | direct-input row gathers |
-| `atlas_execution.py`, `atlas_rtl_reference.py` | lib | npu_model execution |
-| `atlas_program_checks.py`, `atlas_weight_source.py`, `smol_weight_relocate.py`, `atlas_path_guard.py`, `atlas_tooling.py`, `kernel_gen.py` | lib | checks, weight source, relocation, path admission, receipts, generator plumbing |
-| `atlas_tile_arithmetic.py`, `atlas_vector_arithmetic.py` | lib/golden | rational and NumPy references |
+The generator modules retain their atlas-mlir `tools/` names for bare-name import compatibility. The [family guides](#layout) and their `kernel.yaml` manifests document kernel entry points and variants; [lib/README.md](lib/README.md) documents shared helpers and independent arithmetic references. Module basenames must remain unique across the library.
 
 ## Running the tests
 
@@ -81,7 +60,7 @@ make test-projection_gemm PYTHON=/path/to/venv/bin/python NPU_MODEL=/path/to/npu
 
 ## Generating a kernel
 
-Each family has a generator command line, `kernels/<family>/gen.py`, run through make:
+Each family has a generator command line, `kernels/<family>/gen.py`, run through make. The [shared per-family interface](kernels/README.md) documents representative `gen`, `data`, `test`, and explicitly provisioned `rtl` targets, ignored outputs, and PENDING reference gaps:
 
 ```sh
 make gen-projection_gemm PYTHON=/path/to/venv/bin/python NPU_MODEL=/path/to/npu-model ARGS="--shape 128x2048x2048 --traffic-reuse"
@@ -103,7 +82,7 @@ Kernels are checked at three levels, and their encoding can be checked by a four
 
 atlas-mlir imports these modules by bare name, exactly as it did when they lived in its `tools/` directory. Its `tools/kernel_library.py` puts this submodule on `sys.path` and imports `atlas_kernels_path`; every atlas-mlir file that imports a kernel imports `kernel_library` first. Module basenames are unique across the library (`lib/tests/test_library_layout.py` checks it), so `atlas_kernels_path.module_path("atlas_program.py")` names the one file that defines a module, and atlas-mlir resolves source pins through `kernel_library.source_path` and `kernel_library.code_sources`.
 
-The generator files are byte-identical to the atlas-mlir sources that model receipts pin, so two of them still import atlas-mlir host helpers (`atlas_program` imports `run_model_tile.validate_archive_members`; the Smol fusion generators import `chipyard.arena.relocate_assembly`). Inside atlas-mlir the real modules load. When this repository runs on its own, `atlas_kernels_path` serves verbatim stand-ins from `lib/fallback/`, through a finder consulted only after every normal import has failed.
+The integration results describe atlas-kernels `6123bef` at atlas-mlir gate `0c0edf7`; later source edits require fresh qualification. The projection and Smol fusion generators import atlas-mlir host helpers (`atlas_program` imports `run_model_tile.validate_archive_members`; the Smol fusion generators import `chipyard.arena.relocate_assembly`). Inside atlas-mlir the real modules load. When this repository runs on its own, `atlas_kernels_path` serves verbatim stand-ins from `lib/fallback/`, through a finder consulted only after every normal import has failed.
 
 ## Adding a kernel
 

@@ -298,20 +298,32 @@ def generator(family, arguments, work, model_root):
     return (out / 'program.S').read_text(), dict(record, command=text)
 
 
-def synthetic_projection(p, rng):
-    """FP32 A [M, K] ~ N(0, 1) and W [K, N] ~ N(0, 0.02^2) with zero padding outside the logical extent."""
-    import numpy as np
-    import kernel_bench as bench
-    a = np.zeros((p['m'], p['k']), dtype=np.float32)
-    w = np.zeros((p['k'], p['n']), dtype=np.float32)
-    a[:p['rows'], :p['logical_k']] = rng.standard_normal((p['rows'], p['logical_k']), dtype=np.float32)
-    w[:p['logical_k'], :p['logical_n']] = (0.02 * rng.standard_normal((p['logical_k'], p['logical_n']))).astype(np.float32)
-    return a, w, bench.quantize(a), bench.quantize(w)
+class Projection:
+    """FP32 A ~ N(0, 1), W ~ N(0, 0.02^2), and zero logical padding, with shared result plumbing."""
+    def __init__(self, p, rng):
+        import numpy as np
+        import kernel_bench as bench
+        self.m, self.k, self.n = p['m'], p['k'], p['n']
+        self.a = np.zeros((self.m, self.k), dtype=np.float32)
+        self.w = np.zeros((self.k, self.n), dtype=np.float32)
+        self.a[:p['rows'], :p['logical_k']] = rng.standard_normal((p['rows'], p['logical_k']), dtype=np.float32)
+        self.w[:p['logical_k'], :p['logical_n']] = (0.02 * rng.standard_normal((p['logical_k'], p['logical_n']))).astype(np.float32)
+        self.a_codes, self.a_scale = bench.quantize(self.a)
+        self.w_codes, self.w_scale = bench.quantize(self.w)
+        self.scale, self.shape = self.a_scale + self.w_scale, f'{self.m}x{self.k}x{self.n}'
 
+    def arena(self, extent, extras=b''):
+        import kernel_bench as bench
+        return bench.pack_fp8_tiles(self.a_codes) + bench.pack_fp8_weights(self.w_codes) + b'\xa5' * 256 + b'\xcd' * extent + b'\x5a' * 256 + extras
 
-def projection_arena(p, a_codes, w_codes, extent, extras=b''):
-    import kernel_bench as bench
-    return bench.pack_fp8_tiles(a_codes) + bench.pack_fp8_weights(w_codes) + b'\xa5' * 256 + b'\xcd' * extent + b'\x5a' * 256 + extras
+    def finish(self, source, record, expected, variant, *, golden=None, extras=b'', offset=None,
+               extent=None, decode=None, arena=None, **meta):
+        import kernel_bench as bench
+        extent = 2 * self.m * self.n if extent is None else extent
+        return Built(source, self.arena(extent, extras) if arena is None else arena,
+                     self.m * self.k + self.k * self.n + 256 if offset is None else offset, extent, expected,
+                     decode or (lambda raw, m=self.m, n=self.n: bench.bf16_values(bench.unpack_bf16_tiles(raw, m, n))),
+                     golden, variant, record, dict(a_scale=self.a_scale, w_scale=self.w_scale, **meta))
 
 
 def recipe(m, k, n):
@@ -326,22 +338,19 @@ def build_projection_gemm(p, rng, gen):
     import kernel_bench as bench
     from atlas_vector_arithmetic import ordered_matmul, rescale_bf16_array
     reference = bench.load_reference('projection_gemm')
-    m, k, n = p['m'], p['k'], p['n']
-    a, w, (a_codes, a_scale), (w_codes, w_scale) = synthetic_projection(p, rng)
-    shape, scale = f'{m}x{k}x{n}', str(a_scale + w_scale)
+    projection = Projection(p, rng)
     try:
-        source, record = gen('projection_gemm', ['--shape', shape, '--rescale-exponent', scale, '--traffic-reuse'])
+        source, record = gen('projection_gemm', ['--shape', projection.shape, '--rescale-exponent', str(projection.scale), '--traffic-reuse'])
         variant = f"{record['recipe'].removeprefix('atlas_program_reuse_')} recipe"
     except NoVariant as reuse:
         try:
-            source, record = gen('projection_gemm', ['--shape', shape, '--rescale-exponent', scale])
+            source, record = gen('projection_gemm', ['--shape', projection.shape, '--rescale-exponent', str(projection.scale)])
         except NoVariant as default:
             raise NoVariant(f'{reuse}; {default}') from None
         variant = 'default schedule (no traffic-reuse recipe for this shape)'
-    return Built(bench.relocate(source), projection_arena(p, a_codes, w_codes, 2 * m * n), m * k + k * n + 256, 2 * m * n,
-                 reference.reference(a, w), lambda raw: bench.bf16_values(bench.unpack_bf16_tiles(raw, m, n)),
-                 lambda: bench.pack_bf16_tiles(rescale_bf16_array(ordered_matmul(a_codes, w_codes), a_scale + w_scale)),
-                 variant, record, dict(a_scale=a_scale, w_scale=w_scale))
+    return projection.finish(bench.relocate(source), record, reference.reference(projection.a, projection.w), variant,
+                             golden=lambda a=projection.a_codes, w=projection.w_codes, scale=projection.scale:
+                                 bench.pack_bf16_tiles(rescale_bf16_array(ordered_matmul(a, w), scale)))
 
 
 def build_epilogue(p, rng, gen):
@@ -350,25 +359,22 @@ def build_epilogue(p, rng, gen):
     import kernel_bench as bench
     reference = bench.load_reference('epilogue')
     m, k, n = p['m'], p['k'], p['n']
-    a, w, (a_codes, a_scale), (w_codes, w_scale) = synthetic_projection(p, rng)
-    scale = a_scale + w_scale
+    projection = Projection(p, rng)
     steps = p['steps']
     if steps == ['silu'] and p['output'] == 'bf16':
-        source, record = gen('epilogue', ['--shape', f'{m}x{k}x{n}', '--steps', 'silu', '--rescale-exponent', str(scale)])
-        return Built(bench.relocate(source), projection_arena(p, a_codes, w_codes, record['output_bytes']), record['output_offset'],
-                     record['output_bytes'], reference.reference(a, w),
-                     lambda raw: bench.bf16_values(bench.unpack_bf16_tiles(raw, m, n)), None,
-                     f"{record['recipe'].removeprefix('atlas_program_reuse_')} recipe + SiLU epilogue", record,
-                     dict(a_scale=a_scale, w_scale=w_scale))
+        source, record = gen('epilogue', ['--shape', projection.shape, '--steps', 'silu', '--rescale-exponent', str(projection.scale)])
+        return projection.finish(bench.relocate(source), record, reference.reference(projection.a, projection.w),
+                                 f"{record['recipe'].removeprefix('atlas_program_reuse_')} recipe + SiLU epilogue",
+                                 offset=record['output_offset'], extent=record['output_bytes'])
     if steps == ['mul'] and p['output'] == 'fp8':
         gate_words = np.zeros((m, n), dtype=np.uint16)
         gate_words[:p['rows'], :p['logical_n']] = bench.bf16_words(torch.nn.functional.silu(
             torch.from_numpy(rng.standard_normal((p['rows'], p['logical_n']), dtype=np.float32))).numpy())
         gate = bench.bf16_values(gate_words)
-        expected = reference.reference(a, w, gate)
+        expected = reference.reference(projection.a, projection.w, gate)
         output_scale = bench.fp8_scale(expected)
         stride = 32 * p.get('consumer_width', n)
-        source, record = gen('epilogue', ['--shape', f'{m}x{k}x{n}', '--steps', 'mul', '--fp8', '--rescale-exponent', str(scale),
+        source, record = gen('epilogue', ['--shape', projection.shape, '--steps', 'mul', '--fp8', '--rescale-exponent', str(projection.scale),
                                           '--output-scale-exponent', str(output_scale), '--output-row-stride', str(stride)])
         if record['operand_offset'] != record['output_offset'] + record['output_bytes'] + 256:
             raise ValueError('epilogue operand offset differs from the staged layout')
@@ -376,10 +382,10 @@ def build_epilogue(p, rng, gen):
         def decode(raw):
             blocks = [bench.unpack_fp8_tiles(raw[r * stride:r * stride + n * 32], 32, n) for r in range(m // 32)]
             return bench.fp8_values(np.concatenate(blocks), output_scale)
-        return Built(bench.relocate(source), projection_arena(p, a_codes, w_codes, record['output_bytes'], bench.pack_bf16_tiles(gate_words)),
-                     record['output_offset'], record['output_bytes'], expected, decode, None,
-                     f"{record['recipe'].removeprefix('atlas_program_reuse_')} recipe + multiply epilogue, FP8 out", record,
-                     dict(a_scale=a_scale, w_scale=w_scale, output_scale=output_scale))
+        return projection.finish(bench.relocate(source), record, expected,
+                                 f"{record['recipe'].removeprefix('atlas_program_reuse_')} recipe + multiply epilogue, FP8 out",
+                                 offset=record['output_offset'], extent=record['output_bytes'], decode=decode,
+                                 extras=bench.pack_bf16_tiles(gate_words), output_scale=output_scale)
     raise NoVariant(f'no bench staging for epilogue steps {steps} with {p["output"]} output')
 
 
@@ -389,22 +395,21 @@ def build_rne_add(p, rng, gen):
     from atlas_vector_arithmetic import decode_bf16, ordered_matmul, rescale_bf16_array, round_bf16
     reference = bench.load_reference('rne_add')
     m, k, n = p['m'], p['k'], p['n']
-    a, w, (a_codes, a_scale), (w_codes, w_scale) = synthetic_projection(p, rng)
+    projection = Projection(p, rng)
     residual_words = np.zeros((m, n), dtype=np.uint16)
     residual_words[:p['rows'], :p['logical_n']] = bench.bf16_words(rng.standard_normal((p['rows'], p['logical_n']), dtype=np.float32))
-    source, record = gen('epilogue', ['--shape', f'{m}x{k}x{n}', '--steps', 'add_rne', '--rescale-exponent', str(a_scale + w_scale)])
+    source, record = gen('epilogue', ['--shape', projection.shape, '--steps', 'add_rne', '--rescale-exponent', str(projection.scale)])
     if record['operand_offset'] != record['output_offset'] + 2 * m * n + 256:
         raise ValueError('residual offset differs from the staged layout')
 
-    def golden():
-        projected = rescale_bf16_array(ordered_matmul(a_codes, w_codes), a_scale + w_scale)
+    def golden(a=projection.a_codes, w=projection.w_codes, scale=projection.scale):
+        projected = rescale_bf16_array(ordered_matmul(a, w), scale)
         return bench.pack_bf16_tiles(round_bf16(decode_bf16(projected) + decode_bf16(residual_words)))
-    return Built(bench.relocate(source), projection_arena(p, a_codes, w_codes, 2 * m * n, bench.pack_bf16_tiles(residual_words)),
-                 record['output_offset'], 2 * m * n, reference.reference(a, w, bench.bf16_values(residual_words)),
-                 lambda raw: bench.bf16_values(bench.unpack_bf16_tiles(raw, m, n)), golden,
-                 f"{record['recipe'].removeprefix('atlas_program_reuse_')} recipe + add_rne epilogue "
-                 '(kernels/epilogue/gen.py --steps add_rne; kernels/rne_add/gen.py emits only the add sequence)', record,
-                 dict(a_scale=a_scale, w_scale=w_scale))
+    return projection.finish(bench.relocate(source), record,
+                             reference.reference(projection.a, projection.w, bench.bf16_values(residual_words)),
+                             f"{record['recipe'].removeprefix('atlas_program_reuse_')} recipe + add_rne epilogue "
+                             '(kernels/epilogue/gen.py --steps add_rne; kernels/rne_add/gen.py emits only the add sequence)',
+                             offset=record['output_offset'], extras=bench.pack_bf16_tiles(residual_words), golden=golden)
 
 
 def build_rope(p, rng, gen):
@@ -413,23 +418,22 @@ def build_rope(p, rng, gen):
     from atlas_vector_arithmetic import decode_bf16, ordered_matmul, rescale_bf16_array, round_bf16
     reference = bench.load_reference('rope')
     m, k, n = p['m'], p['k'], p['n']
-    a, w, (a_codes, a_scale), (w_codes, w_scale) = synthetic_projection(p, rng)
-    source, record = gen('rope', ['--shape', f'{m}x{k}x{n}', '--rescale-exponent', str(a_scale + w_scale)])
+    projection = Projection(p, rng)
+    source, record = gen('rope', ['--shape', projection.shape, '--rescale-exponent', str(projection.scale)])
     cos_words, sin_words = reference.tables(m)
     blob = b''.join(bench.pack_bf16_tiles(value[:m, :32]) for value in (cos_words, sin_words, sin_words ^ 0x8000))
     if record['table_offset'] != record['output_offset'] + 2 * m * n + 256:
         raise ValueError('RoPE table offset differs from the staged layout')
     heads = n // 64
 
-    def golden():
-        x = decode_bf16(rescale_bf16_array(ordered_matmul(a_codes, w_codes), a_scale + w_scale))
+    def golden(a=projection.a_codes, w=projection.w_codes, scale=projection.scale):
+        x = decode_bf16(rescale_bf16_array(ordered_matmul(a, w), scale))
         cosine, sine = (np.tile(decode_bf16(words), heads) for words in (cos_words, sin_words))
         return bench.pack_bf16_tiles(round_bf16(decode_bf16(round_bf16(x * cosine)) + decode_bf16(round_bf16(reference.rotate_half(x) * sine))))
-    return Built(bench.relocate(source), projection_arena(p, a_codes, w_codes, 2 * m * n, blob), record['output_offset'], 2 * m * n,
-                 reference.reference(a, w, bench.bf16_values(cos_words), bench.bf16_values(sin_words)),
-                 lambda raw: bench.bf16_values(bench.unpack_bf16_tiles(raw, m, n)), golden,
-                 f"{record['recipe'].removeprefix('atlas_program_reuse_')} recipe + RoPE post-pass (positions 0..{m - 1})", record,
-                 dict(a_scale=a_scale, w_scale=w_scale))
+    return projection.finish(bench.relocate(source), record,
+                             reference.reference(projection.a, projection.w, bench.bf16_values(cos_words), bench.bf16_values(sin_words)),
+                             f"{record['recipe'].removeprefix('atlas_program_reuse_')} recipe + RoPE post-pass (positions 0..{m - 1})",
+                             offset=record['output_offset'], extras=blob, golden=golden)
 
 
 def build_rmsnorm(p, rng, gen):
@@ -531,26 +535,26 @@ def build_smol_fusion(p, rng, gen):
     m, k, n = p['m'], p['k'], p['n']
     if p['operations'] != ['bias', 'gelu_tanh'] or p['output'] != 'fp8':
         raise NoVariant(f"no bench staging for smol_fusion {p['operations']} with {p['output']} output")
-    a, w, (a_codes, a_scale), (w_codes, w_scale) = synthetic_projection(p, rng)
+    projection = Projection(p, rng)
     bias_words = np.zeros(n, dtype=np.uint16)
     bias_words[:p['logical_n']] = bench.bf16_words(0.1 * rng.standard_normal(p['logical_n'], dtype=np.float32))
-    expected = reference.reference(a, w, bench.bf16_values(bias_words))
+    expected = reference.reference(projection.a, projection.w, bench.bf16_values(bias_words))
     output_scale = bench.fp8_scale(expected)
-    source, record = gen('smol_fusion', ['--shape', f'{m}x{k}x{n}', '--fp8', '--module', p['module'],
-                                         '--rescale-exponent', str(a_scale + w_scale), '--output-scale-exponent', str(output_scale)])
+    source, record = gen('smol_fusion', ['--shape', projection.shape, '--fp8', '--module', p['module'],
+                                         '--rescale-exponent', str(projection.scale), '--output-scale-exponent', str(output_scale)])
     offset = m * k + k * n + 256
     row = dict(index=0, call=0, module=p['module'], physical_mkn=[m, k, n], logical_mkn=[m, k, n], logical_row_start=0,
                output_offset=offset, dram_bytes=offset + 2 * m * n + 256, recipe='traffic-reuse-v1',
-               program_policy='traffic-reuse-v1', output_rescale_exponent=a_scale + w_scale, dram_base=0x90000000,
+               program_policy='traffic-reuse-v1', output_rescale_exponent=projection.a_scale + projection.w_scale, dram_base=0x90000000,
                requested_dma=dict(load_bytes=dma_load_bytes(m, k, n, traffic_reuse=True), store_bytes=2 * m * n))
-    program = stage_fc1_fp8(row, projection_arena(p, a_codes, w_codes, 2 * m * n), bias_bf16=bias_words.tobytes(),
+    program = stage_fc1_fp8(row, projection.arena(2 * m * n), bias_bf16=bias_words.tobytes(),
                             output_scale_exponent=output_scale)
     if program.source != source:
         raise ValueError('smol_fusion program differs between gen.py and the staged synthetic arena')
-    return Built(source, program.arena, offset, m * n, expected,
-                 lambda raw: bench.fp8_values(bench.unpack_fp8_tiles(raw, m, n), output_scale), None,
-                 f"{recipe(m, k, n)} recipe + fc1 bias and GELU (tanh), FP8 out (smol_fusion_fp8.stage_fc1_fp8)", record,
-                 dict(a_scale=a_scale, w_scale=w_scale, output_scale=output_scale))
+    return projection.finish(source, record, expected,
+                             f"{recipe(m, k, n)} recipe + fc1 bias and GELU (tanh), FP8 out (smol_fusion_fp8.stage_fc1_fp8)",
+                             arena=program.arena, offset=offset, extent=m * n, output_scale=output_scale,
+                             decode=lambda raw: bench.fp8_values(bench.unpack_fp8_tiles(raw, m, n), output_scale))
 
 
 BUILDERS = {'projection_gemm': build_projection_gemm, 'epilogue': build_epilogue, 'rne_add': build_rne_add,

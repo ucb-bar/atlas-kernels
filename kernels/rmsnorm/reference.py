@@ -7,7 +7,7 @@ There is no independent Atlas-arithmetic golden; fidelity is against FP32 PyTorc
 import numpy as np
 import torch
 
-from atlas_norm_postpass import H_WORD, ResidentNormEpilogue, postpass
+from atlas_norm_postpass import standalone_source
 from atlas_rmsnorm_postpass import MASK_BYTES
 import kernel_bench as bench
 
@@ -40,20 +40,9 @@ def build(spec, rng):
     output_offset, output_bytes = 2 * m * width, m * width
     mask_offset = output_offset + output_bytes + 256
     gamma_offset = mask_offset + MASK_BYTES
-    epilogue = None if width not in (960, 2048) else ResidentNormEpilogue(m, width, 0, scratch_registers=(10, 11), norm_kind='rms', real_n=width,
-                                    norm_mask_offset=mask_offset, norm_weight_offset=gamma_offset,
-                                    norm_scale_exponent=scale)
     arena = (h + b'\xcd' * output_bytes + b'\x5a' * 256 + b''.join(bench.pack_bf16_tiles(tile) for tile in masks)
              + bench.pack_bf16_tiles(np.broadcast_to(gamma_words, (32, width)).copy()) + b'\xa5' * 256)
-    lines = ['li x30, 1', 'dma.config x30, ch0', f'li x15, {H_WORD}', 'li x16, 0', 'li x17, 4096',
-             f'li x18, {len(h) // 4096}', 'norm_h_load:', 'dma.load x15, x16, x17, ch0', 'dma.wait ch0',
-             'addi x15, x15, 1024', 'li x19, 4096', 'add x16, x16, x19', 'addi x18, x18, -1',
-             'bne x18, x0, norm_h_load', 'nop']
-    if epilogue is None:
-        from atlas_rmsnorm_tiled import standalone_source
-        source = bench.relocate(standalone_source(m, width, mask_offset, gamma_offset, scale))
-    else:
-        source = bench.relocate('\n'.join(lines + postpass(epilogue) + ['ecall']) + '\n')
+    source = bench.relocate(standalone_source(m, width, mask_offset, gamma_offset, scale))
     return bench.Case(source, arena, output_offset, output_bytes, expected[:m],
                       lambda raw: bench.fp8_values(bench.unpack_fp8_tiles(raw, m, width), scale),
                       meta=dict(output_scale=scale))

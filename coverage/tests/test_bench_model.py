@@ -41,6 +41,32 @@ def toy_model():
         'atlas_rows': [linear('qkv', 8, 32, 64), norm], 'unmapped': [unmapped]}}}
 
 
+def job_args(directory, **overrides):
+    root = Path(directory)
+    defaults = dict(out=root, resume=True, atlas_mlir_bin=root / 'bin', min_tier='stream-verified',
+                    backend_tools={}, model_root=root / 'model', workers=2, max_cycles=100,
+                    max_instructions=100, job_timeout=1, subset_after=1)
+    return SimpleNamespace(**(defaults | overrides))
+
+
+def job_destination(command):
+    return command[command.index('--mode') + 1], Path(command[command.index('--result') + 1])
+
+
+def write_cached_job(args, entry, mode, result):
+    jobs = args.out / 'jobs'
+    jobs.mkdir(exist_ok=True)
+    name = hashlib.sha256((entry['key'] + mode).encode()).hexdigest()[:16]
+    (jobs / f'{name}.{mode}.json').write_text(json.dumps(result))
+
+
+def execute_jobs(entry, args, callback, context=None):
+    with mock.patch.object(bench_model.subprocess, 'run', side_effect=callback) as process, \
+            mock.patch.object(bench_model, 'cache_context', return_value=context or {}), \
+            mock.patch('builtins.print'):
+        return bench_model.execute([entry], args), process
+
+
 class PlanTest(unittest.TestCase):
     def test_focus_models_reproduce_kit_launch_counts(self):
         summary = json.loads((COVERAGE / 'coverage.json').read_text())
@@ -128,27 +154,17 @@ class PlanTest(unittest.TestCase):
         backend = dict(tier='verified', min_tier='stream-verified', tools=tools)
         for cached_status, cached_backend in (('running', backend), ('timeout', None)):
             with self.subTest(cached_status=cached_status), tempfile.TemporaryDirectory() as tmp:
-                args = SimpleNamespace(out=Path(tmp), resume=True, atlas_mlir_bin=Path(tmp) / 'bin',
-                                       min_tier='stream-verified', backend_tools=tools, model_root=Path(tmp) / 'model',
-                                       workers=2, max_cycles=100, max_instructions=100,
-                                       job_timeout=1, subset_after=1)
-                jobs = args.out / 'jobs'
-                jobs.mkdir()
+                args = job_args(tmp, backend_tools=tools)
                 for mode in ('functional', 'timed'):
-                    name = hashlib.sha256((entry['key'] + mode).encode()).hexdigest()[:16]
-                    (jobs / f'{name}.{mode}.json').write_text(json.dumps(dict(
-                        key=entry['key'], mode=mode, status=cached_status, backend=cached_backend, seconds=1)))
+                    write_cached_job(args, entry, mode, dict(
+                        key=entry['key'], mode=mode, status=cached_status, backend=cached_backend, seconds=1))
 
                 def rerun(command, **kwargs):
-                    mode = command[command.index('--mode') + 1]
-                    destination = Path(command[command.index('--result') + 1])
+                    mode, destination = job_destination(command)
                     destination.write_text(json.dumps(dict(key=entry['key'], mode=mode, status='no-variant')))
                     return subprocess.CompletedProcess(command, 0, stdout='', stderr='')
 
-                with mock.patch.object(bench_model.subprocess, 'run', side_effect=rerun) as process, \
-                        mock.patch.object(bench_model, 'cache_context', return_value={}), \
-                        mock.patch('builtins.print'):
-                    results = bench_model.execute([entry], args)
+                results, process = execute_jobs(entry, args, rerun)
                 self.assertEqual(process.call_count, 2)
                 self.assertEqual(sorted(call.args[0][call.args[0].index('--mode') + 1]
                                         for call in process.call_args_list), ['functional', 'timed'])
@@ -165,23 +181,16 @@ class PlanTest(unittest.TestCase):
                         program_words=7, words_sha256='words-digest', arena_sha256='arena-digest')
         for checkpoint in (True, False):
             with self.subTest(checkpoint=checkpoint), tempfile.TemporaryDirectory() as tmp:
-                args = SimpleNamespace(out=Path(tmp), resume=False, atlas_mlir_bin=Path(tmp) / 'bin',
-                                       min_tier='stream-verified', backend_tools={}, model_root=Path(tmp) / 'model',
-                                       workers=2, max_cycles=100, max_instructions=100,
-                                       job_timeout=1, subset_after=1, subset_rows=128)
+                args = job_args(tmp, resume=False, subset_rows=128)
 
                 def timeout(command, **kwargs):
                     if checkpoint:
-                        mode = command[command.index('--mode') + 1]
-                        destination = Path(command[command.index('--result') + 1])
+                        mode, destination = job_destination(command)
                         bench_model.write_job_result(destination, dict(
                             key=entry['key'], mode=mode, status='running', **identity))
                     raise subprocess.TimeoutExpired(command, kwargs['timeout'])
 
-                with mock.patch.object(bench_model.subprocess, 'run', side_effect=timeout), \
-                        mock.patch.object(bench_model, 'cache_context', return_value={}), \
-                        mock.patch('builtins.print'):
-                    results = bench_model.execute([entry], args)
+                results, _ = execute_jobs(entry, args, timeout)
                 self.assertEqual(set(results[entry['key']]), {'functional', 'timed'})
                 for result in results[entry['key']].values():
                     if checkpoint:
@@ -200,13 +209,8 @@ class PlanTest(unittest.TestCase):
                  'negative-match', 'negative-implementation', 'negative-now-supported')
         for case in cases:
             with self.subTest(case=case), tempfile.TemporaryDirectory() as tmp:
-                args = SimpleNamespace(out=Path(tmp), resume=True, atlas_mlir_bin=None,
-                                       min_tier='stream-verified', backend_tools=None, model_root=Path(tmp) / 'model',
-                                       workers=1, max_cycles=100, max_instructions=100, job_timeout=1, subset_after=1)
-                jobs = args.out / 'jobs'
-                jobs.mkdir()
+                args = job_args(tmp, atlas_mlir_bin=None, backend_tools=None, workers=1)
                 for mode in ('functional', 'timed'):
-                    name = hashlib.sha256((entry['key'] + mode).encode()).hexdigest()[:16]
                     binding = bench_model.cache_binding(entry, mode, copy.deepcopy(context), 100, 100, 1)
                     if case in ('implementation', 'model', 'compiler', 'negative-implementation'):
                         binding['context'][case.removeprefix('negative-')] = 'stale'
@@ -218,13 +222,12 @@ class PlanTest(unittest.TestCase):
                     if case == 'timeout':
                         cached['status'] = 'timeout'
                         binding['timeout'] = 0.5
-                    (jobs / f'{name}.{mode}.json').write_text(json.dumps(cached))
+                    write_cached_job(args, entry, mode, cached)
 
                 reruns, checks = [], []
 
                 def subprocess_job(command, **kwargs):
-                    mode = command[command.index('--mode') + 1]
-                    destination = Path(command[command.index('--result') + 1])
+                    mode, destination = job_destination(command)
                     identity = copy.deepcopy(staged)
                     if case in ('words', 'arena'):
                         identity[case + '_sha256'] = 'changed'
@@ -241,10 +244,7 @@ class PlanTest(unittest.TestCase):
                     destination.write_text(json.dumps(result))
                     return subprocess.CompletedProcess(command, 0, stdout='', stderr='')
 
-                with mock.patch.object(bench_model, 'cache_context', return_value=context), \
-                        mock.patch.object(bench_model.subprocess, 'run', side_effect=subprocess_job), \
-                        mock.patch('builtins.print'):
-                    results = bench_model.execute([entry], args)
+                results, _ = execute_jobs(entry, args, subprocess_job, context)
                 reused = case in ('match', 'negative-match')
                 self.assertEqual(len(reruns), 0 if reused else 2)
                 self.assertEqual(len(checks), 2 if case in ('match', 'words', 'arena', 'negative-match',

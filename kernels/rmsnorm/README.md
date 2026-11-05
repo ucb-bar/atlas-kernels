@@ -26,8 +26,6 @@ make gen-rmsnorm NPU_MODEL=/path/to/npu-model ARGS="--rows 128 --width 4096"
 
 The streamed layout uses the default 1572864-byte VMEM: H starts at byte 524288 and occupies `64 * width` bytes, masks start at byte 1048576, gamma starts at byte 1114112, and the 2048-byte output staging region starts at byte 1570816. Gamma must end by staging, giving width 7136. This is the current generator layout capacity; wider rows could use another streaming layout.
 
-`gen.py` writes the program text (`.S`), the 32-bit words npu_model's assembler produces (`.bin`), and a `.json` record into `build/rmsnorm/`. `kernel.yaml` is the machine-readable manifest.
-
 ## Reference and bench results
 
 `reference.py` defines the bench cases and their FP32 PyTorch references for `lib/kernel_bench.py`: 10 cases (TinyLlama prefill 128 rows and decode 1 row, plus widths 32, 1024, 2304, and 4096 at 32 and 128 physical rows); no Atlas-arithmetic golden yet, so they report fidelity and cycles only. [`RESULTS.md`](RESULTS.md) retains the TinyLlama results. The [shape-coverage bench](../../coverage/examples/shape_coverage/MODEL-BENCH.md) checks widths 32, 960, 1024, 2304, 4096, and 7136 at both 32 and 128 rows: 12 full cycle-model launches, all `verified`, with timed output identical to functional output. Minimum cosine is 0.9996254347070453, and maximum relative error is 0.02750694796445788. These are npu_model model cycles, not RTL cycles.
@@ -35,5 +33,3 @@ The streamed layout uses the default 1572864-byte VMEM: H starts at byte 524288 
 ## Tests and checks
 
 `tests/test_norm_postpass.py` checks register hygiene (reserved scratch pairs and the default-sentinel refusal). `tests/test_rmsnorm_tiled.py` checks admission, arena bounds, the short DMA transfer for width 32, and exact signed unit rows at the expanded widths on npu_model when `ATLAS_NPU_MODEL_ROOT` is set. The random-input bench still has no independent Atlas-arithmetic golden. Legacy exactness is established by executing every TinyLlama norm launch on npu_model `47b8599` with `numerics="rtl"` in the export flow (atlas-mlir `tools/tiny_full/export_capture.py --qualify-launches`).
-
-The shared [per-family make interface](../README.md) provides `gen`, `data`, `test`, and explicitly provisioned `rtl` targets for this family, with generated payloads in ignored output directories and reference gaps recorded as PENDING.

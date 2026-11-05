@@ -10,7 +10,7 @@ import struct
 from atlas_epilogue import Epilogue
 from atlas_program_checks import check_matrix_registers
 from atlas_rmsnorm_postpass import (ResidentRMSNormEpilogue, H_WORD, EXTRA_WORD, STAGE_WORD,
-                                   MASK_BYTES, _load_pair, postpass as original_postpass)
+                                   MASK_BYTES, _append_postpass, _load_pair, postpass as original_postpass)
 
 
 @dataclass(frozen=True)
@@ -146,10 +146,22 @@ def postpass(e):
 
 
 def append_postpass(source, epilogue):
+    return _append_postpass(source, epilogue, postpass)
+
+
+def standalone_source(m, width, mask_offset, gamma_offset, scale, *, eps=1e-5):
+    """Standalone RMS launch, retaining resident dispatch and exact load text."""
+    from atlas_rmsnorm_tiled import epsilon_bits, standalone_source as streamed_source
+    epsilon_bits(eps)
+    if width not in (960, 2048) or eps != 1e-5:
+        return streamed_source(m, width, mask_offset, gamma_offset, scale, eps=eps)
+    epilogue = ResidentNormEpilogue(m, width, 0, scratch_registers=(10, 11), norm_kind="rms", real_n=width,
+                                  norm_mask_offset=mask_offset, norm_weight_offset=gamma_offset,
+                                  norm_scale_exponent=scale)
+    lines = ["li x30, 1", "dma.config x30, ch0", f"li x15, {H_WORD}", "li x16, 0", "li x17, 4096",
+             f"li x18, {2 * m * width // 4096}", "norm_h_load:", "dma.load x15, x16, x17, ch0", "dma.wait ch0",
+             "addi x15, x15, 1024", "li x19, 4096", "add x16, x16, x19", "addi x18, x18, -1",
+             "bne x18, x0, norm_h_load", "nop"]
+    source = "\n".join(lines + postpass(epilogue) + ["ecall"]) + "\n"
     check_matrix_registers(source)
-    lines = source.rstrip().splitlines()
-    if not lines or lines[-1] != 'ecall' or lines.count('ecall') != 1:
-        raise ValueError('expected one final ECALL')
-    result = '\n'.join(lines[:-1] + postpass(epilogue) + ['ecall']) + '\n'
-    check_matrix_registers(result)
-    return result
+    return source

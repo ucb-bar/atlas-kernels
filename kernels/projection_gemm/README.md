@@ -11,7 +11,7 @@ FP8 E4M3 matrix multiply `C[M,N] = A[M,K] @ B[K,N]` on MXU0, accumulating in BF1
 - `legacy_epilogue_assembly(...)` reproduces the archived non-Tiny C schedules with their original x30/x31 hook registers.
 - `code_sources(traffic_reuse=False)` and `source_paths(...)` name and hash the files whose bytes program receipts pin. The set includes atlas-mlir's `run_model_tile.py`, so these two functions need atlas-mlir's `tools/` importable.
 
-The `atlas_program_reuse_*.py` modules are the per-shape traffic-reuse schedules; each also exposes `assembly(...)` and `dma_load_bytes(...)`, and `atlas_program_reuse_common.py` holds the shared resident-column load and ordered output store.
+The `atlas_program_reuse_*.py` modules are the per-shape traffic-reuse schedules: `tiny` handles TinyLlama prefill K 2048, `tiny_breadth` handles its down projection and decode, `resident` keeps A resident for SmolVLA vision 128x768x768, `stream` uses two-bank A and streamed B for SmolVLA fc2, `smol_connector` handles its connector, and `blocked` uses bank-bounded blocks for SmolVLA text, expert, and ResNet50 shapes. Each exposes `assembly(...)` and `dma_load_bytes(...)`; `atlas_program_reuse_common.py` holds the shared resident-column load and ordered output store.
 
 ## Variants and the model shapes they serve
 
@@ -34,10 +34,8 @@ make gen-projection_gemm NPU_MODEL=/path/to/npu-model ARGS="--shape 64x736x32"
 
 ## Tests and checks
 
-- `tests/test_program_reuse_*.py` and `tests/test_program_reuse_proof.py` prove every recipe symbolically with `tests/reuse_proof.py` (addresses, K order, bank ownership, DMA traffic, output halves) and include mutation controls that must be detected.
+- `tests/test_program_reuse_resident.py` proves every recipe symbolically with `tests/reuse_proof.py` (addresses, K order, bank ownership, DMA traffic, output halves) and includes mutation controls that must be detected.
 - `tests/test_program_resident.py` checks the default and resident schedules, including frozen SHA-256 digests of the default programs.
 - `tests/test_program_checks.py` and `tests/test_program_legacy_epilogue.py` check register admission for every recipe with and without fused hooks.
 - `tests/test_program_reuse_resident.py` assembles a program with npu_model's assembler and needs `NPU_MODEL`.
 - In atlas-mlir, `test/test_program_traffic_reuse.py` checks dispatch and the source closure, and the TinyLlama and SmolVLA capture flows execute every production launch on npu_model `47b8599` (`lib/atlas_execution.py`).
-
-The shared [per-family make interface](../README.md) provides `gen`, `data`, `test`, and explicitly provisioned `rtl` targets for this family, with generated payloads in ignored output directories and reference gaps recorded as PENDING.
