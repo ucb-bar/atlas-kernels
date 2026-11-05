@@ -46,6 +46,10 @@ def fields(text):
 
 
 class TranslatorTest(unittest.TestCase):
+    def test_missing_tools_raise_instead_of_falling_back(self):
+        with self.assertRaises(atlas_backend.BackendUnavailable):
+            atlas_backend.compile('ebreak\necall\n', bin_dir='/nonexistent')
+
     def test_explicit_configuration_rejects_missing_tools(self):
         with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(
                 atlas_backend, 'tools', side_effect=atlas_backend.BackendUnavailable('missing tools')):
@@ -247,10 +251,6 @@ class BackendTest(unittest.TestCase):
     def test_cross_check_refuses_different_words(self):
         with self.assertRaises(atlas_backend.BackendError):
             atlas_backend.cross_checked('ecall\n', [0x00100073])
-
-    def test_missing_tools_raise_instead_of_falling_back(self):
-        with self.assertRaises(atlas_backend.BackendUnavailable):
-            atlas_backend.compile('ebreak\necall\n', bin_dir='/nonexistent')
 
     def test_identity_records_both_binaries(self):
         identity = atlas_backend.tools().identity()
