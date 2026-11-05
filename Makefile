@@ -23,7 +23,7 @@ ENV := PYTHONDONTWRITEBYTECODE=1 $(if $(NPU_MODEL),PYTHONPATH=$(NPU_MODEL) ATLAS
 
 WORKERS ?= 24
 .PHONY: test test-lib test-coverage test-cites test-bench-model test-families bench-model coverage $(addprefix test-,$(FAMILIES)) $(addprefix gen-,$(GENERATORS))
-test: $(addprefix test-,$(FAMILIES)) test-lib test-coverage test-cites test-bench-model
+test: $(addprefix test-,$(FAMILIES)) test-lib test-coverage test-cites
 
 # Opt-in representative execution checks for all nine family make interfaces.
 # OUT is a shared output root, with one ignored directory per family.
@@ -52,7 +52,7 @@ test-cites:
 	  $(ENV) $(PYTHON) coverage/build_table.py --out "$$out" --check-cites "$(ATLAS_MLIR_ROOT)" "$(MERLIN_ROOT)" .; \
 	else echo 'Citation checks unavailable: set ATLAS_MLIR_ROOT and MERLIN_ROOT, or require them with CHECK_CITES=1'; fi
 
-# The plan tests also run under test-coverage; this target runs the npu_model execution tests with PYTHON and NPU_MODEL.
+# All benchmark tests run under test-coverage; this standalone target selects only that module.
 test-bench-model:
 	$(ENV) $(PYTHON) -m unittest discover -s coverage/tests -t coverage/tests -p 'test_bench_model.py' -v
 
