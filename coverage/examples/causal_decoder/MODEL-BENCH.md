@@ -32,14 +32,6 @@ Compiler tier counts by distinct launch: 3 `verified`.
 | `epilogue` | 2 | 0 | 0 | 0.00% |
 | `rne_add` | 2 | 0 | 0 | 0.00% |
 
-Top shapes by total cycles:
-
-| family | shape | count | model cycles | cycles x count |
-| --- | --- | ---: | ---: | ---: |
-| `rmsnorm` | 32x32 (8 rows) | 2 | 54,186 | 108,372 |
-| `projection_gemm` | 32x32x96 (logical 8x32x96) | 1 | 10,559 | 10,559 |
-| `projection_gemm` | 32x32x64 (logical 8x32x64) | 1 | 7,058 | 7,058 |
-
 Unsupported or failed launches: 4.
 - `epilogue` 32x32x64 (logical 8x32x64) mul FP8 out x1: no-variant: kernels/epilogue/gen.py --shape 32x32x64 --steps mul --fp8 --rescale-exponent -19 --output-scale-exponent -9 --output-row-stride 2048: ValueError: traffic reuse is supported only for the qualified shapes
 - `epilogue` 32x32x64 (logical 8x32x64) silu x1: no-variant: kernels/epilogue/gen.py --shape 32x32x64 --steps silu --rescale-exponent -19: ValueError: traffic reuse is supported only for the qualified shapes
@@ -50,11 +42,11 @@ Unsupported or failed launches: 4.
 
 | family | shape | export dtype | variant | tier | words | count | model cycles | cycles x count | golden | bit-exact | timed equals functional | cosine | rel-err | modules |
 | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- | :-: | :-: | ---: | ---: | --- |
+| `rmsnorm` | 32x32 (8 rows) | float32 | streamed tile-row RMSNorm, FP8 out | verified | 148 | 2 | 54,186 | 108,372 | none | n/a | exact | 0.99968 | 2.517% | `norm` |
+| `projection_gemm` | 32x32x96 (logical 8x32x96) | float32 | default schedule (no traffic-reuse recipe for this shape) | verified | 74 | 1 | 10,559 | 10,559 | ordered_matmul | exact | exact | 0.99935 | 3.608% | `qkv` |
+| `projection_gemm` | 32x32x64 (logical 8x32x64) | float32 | default schedule (no traffic-reuse recipe for this shape) | verified | 74 | 1 | 7,058 | 7,058 | ordered_matmul | exact | exact | 0.99924 | 3.912% | `head` |
 | `epilogue` | 32x32x64 (logical 8x32x64) mul FP8 out | float32 | no-variant | n/a | | 1 | | | | | | | | `up` |
 | `epilogue` | 32x32x64 (logical 8x32x64) silu | float32 | no-variant | n/a | | 1 | | | | | | | | `gate` |
-| `projection_gemm` | 32x32x64 (logical 8x32x64) | float32 | default schedule (no traffic-reuse recipe for this shape) | verified | 74 | 1 | 7,058 | 7,058 | ordered_matmul | exact | exact | 0.99924 | 3.912% | `head` |
-| `projection_gemm` | 32x32x96 (logical 8x32x96) | float32 | default schedule (no traffic-reuse recipe for this shape) | verified | 74 | 1 | 10,559 | 10,559 | ordered_matmul | exact | exact | 0.99935 | 3.608% | `qkv` |
-| `rmsnorm` | 32x32 (8 rows) | float32 | streamed tile-row RMSNorm, FP8 out | verified | 148 | 2 | 54,186 | 108,372 | none | n/a | exact | 0.99968 | 2.517% | `norm` |
 | `rne_add` | 32x32x32 (logical 8x32x32) | float32 | no-variant | n/a | | 1 | | | | | | | | `projection` |
 | `rne_add` | 32x64x32 (logical 8x64x32) | float32 | no-variant | n/a | | 1 | | | | | | | | `down` |
 

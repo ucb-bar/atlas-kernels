@@ -985,10 +985,6 @@ def render(document):
               '| launch kind | launches | launches with cycles | model cycles x count | share |', '| --- | ---: | ---: | ---: | ---: |']
     for family, (count, cycles, timed) in sorted(by_family.items(), key=lambda item: -item[1][1]):
         lines.append(f"| `{family}` | {count:,} | {timed:,} | {cycles:,} | {100 * cycles / total if total else 0:.2f}% |")
-    lines += ['', 'Top shapes by total cycles:', '', '| family | shape | count | model cycles | cycles x count |', '| --- | --- | ---: | ---: | ---: |']
-    for row in sorted(ok, key=lambda r: -r['total_cycles'])[:10]:
-        mark = ' (estimate)' if row.get('cycles_source', 'full launch') != 'full launch' else ''
-        lines.append(f"| `{row['family']}` | {row['shape']} | {row['count']:,} | {row['model_cycles']:,}{mark} | {row['total_cycles']:,}{mark} |")
     unsupported = [row for row in rows if row['status'] != 'ok']
     lines += ['', f"Unsupported or failed launches: {len(unsupported)}."]
     for row in unsupported:
@@ -1013,7 +1009,8 @@ def render(document):
     lines += ['## Launches', '', '| family | shape | export dtype | variant | tier | words | count | model cycles | cycles x count | golden | '
               'bit-exact | timed equals functional | cosine | rel-err | modules |',
               '| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- | :-: | :-: | ---: | ---: | --- |']
-    for row in rows:
+    for row in sorted(rows, key=lambda row: (row['status'] != 'ok' or 'total_cycles' not in row,
+                                             -row.get('total_cycles', 0))):
         if row['status'] == 'no-variant':
             lines.append(f"| `{row['family']}` | {row['shape']} | {', '.join(row['dtypes'])} | no-variant | n/a | | {row['count']:,} | | | | | | | | "
                          f"{', '.join(f'`{m}`' for m in row['modules'][:3])}{' ...' if len(row['modules']) > 3 else ''} |")

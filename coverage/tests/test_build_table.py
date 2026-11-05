@@ -1,11 +1,13 @@
 """The committed coverage table regenerates byte for byte, and an unmapped op fails the build."""
 import json
+import os
 import copy
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from urllib.parse import quote, unquote
 
 COVERAGE = Path(__file__).absolute().parents[1]
 sys.path.insert(0, str(COVERAGE))
@@ -78,11 +80,22 @@ class BuildTableTest(unittest.TestCase):
             self.assertFalse((root / 'report').exists())
 
     def test_committed_table_is_current(self):
-        with tempfile.TemporaryDirectory() as out:
-            subprocess.run([sys.executable, '-B', str(COVERAGE / 'build_table.py'), '--out', out], check=True,
+        with tempfile.TemporaryDirectory(prefix='coverage report ') as directory:
+            source, out = Path(directory) / 'coverage source', Path(directory) / 'report output'
+            source.symlink_to(COVERAGE, target_is_directory=True)
+            subprocess.run([sys.executable, '-B', str(source / 'build_table.py'), '--out', str(out)], check=True,
                            stdout=subprocess.DEVNULL)
-            for name in ('COVERAGE.md', 'coverage.json'):
-                self.assertEqual((Path(out) / name).read_text(), (COVERAGE / name).read_text(), name)
+            self.assertEqual((Path(out) / 'coverage.json').read_bytes(), (COVERAGE / 'coverage.json').read_bytes())
+            guide = quote(Path(os.path.relpath(source / 'README.md', out)).as_posix())
+            self.assertIn('%20', guide)
+            expected = (COVERAGE / 'COVERAGE.md').read_text().replace('(README.md#', f'({guide}#')
+            self.assertEqual((Path(out) / 'COVERAGE.md').read_text(), expected)
+            anchors = ('files', 'how-mappingyaml-relates-to-merlins-selectionyaml', 'regenerate',
+                       'adding-a-model', 'limits', 'coverage')
+            self.assertEqual(expected.count(f']({guide}#'), len(anchors))
+            for anchor in anchors:
+                self.assertIn(f']({guide}#{anchor})', expected)
+            self.assertEqual((Path(out) / unquote(guide)).resolve(), (COVERAGE / 'README.md').resolve())
 
     def test_every_rule_is_needed(self):
         mapping = yaml.safe_load((COVERAGE / 'mapping.yaml').read_text())
