@@ -1,6 +1,6 @@
 # rmsnorm
 
-Row normalization as a serialized post-pass appended to a projection launch. The producer projection retains its post-residual BF16 output `h` in VMEM banks 2 and 3 ([epilogue](../epilogue/README.md) `retain_output`) and stores it as usual; the post-pass then computes per-row statistics with two register pairs and emits the normalized, gamma-scaled result as natural FP8 tiles immediately after `h` in the same output extent, ready to be the next projection's A operand.
+Serialized row-normalization post-pass for a projection launch. The producer retains post-residual BF16 `h` in VMEM banks 2 and 3 ([epilogue](../epilogue/README.md) `retain_output`) and stores it; two register pairs compute per-row statistics, then the pass writes normalized, gamma-scaled natural FP8 tiles immediately after `h` in the same output extent for the next projection's A operand.
 
 Stage: a post-pass. TinyLlama runs it as a standalone launch that first DMAs the BF16 rows into VMEM banks 2 and 3 (atlas-mlir `tools/tiny_full/norm.py`).
 
@@ -28,7 +28,7 @@ The streamed layout uses the default 1572864-byte VMEM: H starts at byte 524288 
 
 ## Reference and bench results
 
-`reference.py` defines the bench cases and their FP32 PyTorch references for `lib/kernel_bench.py`: 10 cases (TinyLlama prefill 128 rows and decode 1 row, plus widths 32, 1024, 2304, and 4096 at 32 and 128 physical rows); no Atlas-arithmetic golden yet, so they report fidelity and cycles only. [`RESULTS.md`](RESULTS.md) retains the TinyLlama results. The [shape-coverage bench](../../coverage/examples/shape_coverage/MODEL-BENCH.md) checks widths 32, 960, 1024, 2304, 4096, and 7136 at both 32 and 128 rows: 12 full cycle-model launches, all `verified`, with timed output identical to functional output. Minimum cosine is 0.9996254347070453, and maximum relative error is 0.02750694796445788. These are npu_model model cycles, not RTL cycles.
+`reference.py` provides FP32 PyTorch references for the [shared bench](../../lib/README.md): 10 cases (TinyLlama prefill 128 rows and decode 1 row, plus widths 32, 1024, 2304, and 4096 at 32 and 128 physical rows); no Atlas-arithmetic golden yet, so they report fidelity and cycles only. [`RESULTS.md`](RESULTS.md) retains the TinyLlama results. The [shape-coverage bench](../../coverage/examples/shape_coverage/MODEL-BENCH.md) checks widths 32, 960, 1024, 2304, 4096, and 7136 at both 32 and 128 rows: 12 full cycle-model launches, all `verified`, with timed output identical to functional output. Minimum cosine is 0.9996254347070453, and maximum relative error is 0.02750694796445788. These are npu_model model cycles, not RTL cycles.
 
 ## Tests and checks
 

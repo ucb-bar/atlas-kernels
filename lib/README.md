@@ -6,7 +6,7 @@ Helpers shared by the kernel families, and the references the kernels are checke
 | --- | --- |
 | `atlas_execution.py` | `Executor(model_root)`: assembles a program with npu_model's own assembler and executes it on `ArchState` with `numerics="rtl"`. It requires npu_model at `MODEL_PIN` (`47b8599d8ffbe5ddd96059ffe2b5be2427a410f5`), compares the complete final DRAM arena with the expected bytes, checks requested DMA traffic, and records the SHA-256 of itself and `atlas_path_guard.py` (it must sit next to that file). This is functional execution, not a timing measurement. |
 | `atlas_rtl_reference.py` | `RtlReference(arena_base)`: executes scheduled physical instructions one at a time with `numerics="rtl"`, including scalar branch delay slots; used by the ResNet layout-kernel tests. |
-| `atlas_program_checks.py` | Static register checks for every contraction entry point: `checked_assembly` (decorator), `check_matrix_registers`, `check_scalar_scratch`, `check_hook_footprint`. |
+| `atlas_program_checks.py` | Static register checks for every contraction entry point: `checked_assembly` (decorator), `check_matrix_registers`, `check_scalar_scratch`, `check_hook_footprint`. Rejects odd starting registers for BF16 pairs, distinct binary sources sharing physical banks, and schedule/epilogue scalar-scratch collisions. |
 | `atlas_weight_source.py` | `WeightSource(base, size_bytes, arena_base)`: an immutable FP8 weight region read in place by fast builds, separate from the dynamic arena. |
 | `smol_weight_relocate.py` | `relocate_assembly(source, old_base, new_base, *, force=False, weight_source=None)`: moves a program's DMA arena to a new physical base, leaving weight-source transfers in place. |
 | `atlas_path_guard.py` | Physical-path admission (no parent traversal, no symbolic links, no restricted components) used before any file read. |
@@ -24,7 +24,7 @@ Helpers shared by the kernel families, and the references the kernels are checke
 
 ## Compiler backend (`atlas_asm_mlir.py`, `atlas_backend.py`)
 
-The kernel generators emit Atlas assembly text, and npu_model's assembler turns it into the 32-bit words the builds embed. `lib/atlas_backend.py run --backend atlas-mlir` is an enforcing comparison gate around that assembler path: it translates the same text to machine IR, runs the `atlas-opt` verifiers, encodes the words with `atlas-emit`, and refuses any program whose words differ from the assembler's. The wrapper returns the assembler-produced program. A backend gap shows up as an error or as a lower tier.
+The [generator path](../README.md) uses npu_model's assembler. `atlas_backend.py run --backend atlas-mlir` translates the same text to machine IR, verifies it, requires identical emitted words, and returns the assembler-produced program. Errors or lower tiers expose backend gaps.
 
 ### Tiers
 
@@ -43,7 +43,7 @@ Explicit conditional inputs use `compile(..., dram_contract={name, segments, ima
 
 `--verify-atlas-generated-schedule` does not apply to these programs. It needs the resource contracts that atlas-mlir's virtual-IR lowering attaches, and hand-written kernels have none.
 
-Attention also provides an explicitly selected [`v2-no-halt-delay`](../kernels/attention/HALT.md) variant. It preserves the pinned original module and removes the terminal pad while retaining both DMA waits. This follow-up does not change the shipped kit programs or their historical tier counts above.
+The opt-in [`v2-no-halt-delay`](../kernels/attention/HALT.md) preserves the pinned original module, removes the terminal pad, and retains both DMA waits. Shipped kits retain the original programs.
 
 ### Requirements
 

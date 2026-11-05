@@ -24,13 +24,13 @@ make gen-rope NPU_MODEL=/path/to/npu-model ARGS="--shape 32x2048x256"
 
 ## Reference and bench results
 
-`reference.py` defines the bench cases and their FP32 PyTorch references for `lib/kernel_bench.py`: 1 case (TinyLlama prefill q_proj with RoPE), bit-exact against `ordered_matmul` plus the RoPE RNE formula. [`RESULTS.md`](RESULTS.md) lists bit-exactness, cosine similarity and relative error against the FP32 reference, and npu_model model cycles (not RTL cycles) for each case, run on npu_model 47b8599 with `numerics="rtl"`.
+`reference.py` provides FP32 PyTorch references for the [shared bench](../../lib/README.md): 1 case (TinyLlama prefill q_proj with RoPE), bit-exact against `ordered_matmul` plus the RoPE RNE formula. [`RESULTS.md`](RESULTS.md) reports exactness, FP32 fidelity, and model cycles under the [shared bench conventions](../../README.md#model-coverage).
 
 ## Tests and checks
 
-Run `make test-lib test-projection_gemm test-coverage NPU_MODEL=/path/to/npu-model` from the repository root. See [shared test coverage](../../README.md#running-the-tests).
+From the repository root, run `make test-lib test-projection_gemm test-coverage NPU_MODEL=/path/to/npu-model`; see [shared coverage](../../README.md#running-the-tests).
 
-Standalone numeric tests are described below. Existing producer exactness is established by executing every TinyLlama RoPE launch on npu_model `47b8599` with `numerics="rtl"` in the export flow (atlas-mlir `tools/tiny_full/export_capture.py --qualify-launches`), and atlas-mlir `tools/tiny_full/check_programs.py` checks the rebuilt programs.
+Producer exactness is established by executing every TinyLlama RoPE launch on npu_model `47b8599` with `numerics="rtl"` in the export flow (atlas-mlir `tools/tiny_full/export_capture.py --qualify-launches`), and atlas-mlir `tools/tiny_full/check_programs.py` checks the rebuilt programs.
 
 ## Opt-in standalone BF16 launch
 

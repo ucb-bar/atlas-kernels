@@ -2,17 +2,13 @@
 
 3x3 stride-two max pooling of FP8 channels-last tensors, as one standalone launch. The pool is exact for nonnegative normal FP8 inputs: VUNPACK and VPACK at unit scale round-trip every such byte, VMAXIMUM orders them as the bytes order, and an MXU0 product with a one-hot FP8 row moves a byte into BF16 without rounding. Padded taps contribute zero, which never exceeds a nonnegative maximum. Each input row is staged once in its own 8 KiB VMEM slot.
 
-Stage: standalone launch.
-
 ## Entry point
 
 `atlas_resnet_pool.py` `MaxPool(source_offset, constants_offset, output_offset, channels, height, width)`: `validate(arena_bytes=None)` checks geometry and alignment, `constants()` returns the one-hot shift tiles staged at `constants_offset`, `assembly(arena_base)` returns the program, and `dma_load_bytes`, `dma_store_bytes`, `output_height`, and `output_width` describe it.
 
 ## Where the model uses it
 
-| Model | Input (CxHxW) | Output |
-| --- | --- | --- |
-| ResNet50 | 64x112x112 (stem output) | 64x56x56 |
+ResNet50 stem output: 64x112x112 input (CxHxW) to 64x56x56 output.
 
 ## Generate
 

@@ -1,8 +1,6 @@
 # epilogue
 
-Ordered BF16 tile epilogues fused into a projection's output store. An `Epilogue` runs after each output tile is popped from MXU0 and before it is stored, so element-wise work that follows a GEMM costs no extra launch or DRAM round trip.
-
-Stage: the default epilogue API is fused into a projection_gemm launch; the opt-in contiguous SiLU times up stream below is a separate standalone launch.
+Ordered BF16 tile epilogues fused into a projection_gemm output store. An `Epilogue` runs between each MXU0 output-tile pop and store, avoiding an extra launch or DRAM round trip for element-wise work. The opt-in contiguous SiLU times up stream below launches separately.
 
 ## Entry points
 
@@ -30,11 +28,11 @@ make gen-epilogue NPU_MODEL=/path/to/npu-model ARGS="--shape 128x2048x2048 --ste
 
 ## Reference and bench results
 
-`reference.py` defines the bench cases and their FP32 PyTorch references for `lib/kernel_bench.py`: 2 cases (TinyLlama gate SiLU and up multiply with FP8 output); no Atlas-arithmetic golden yet, so they report fidelity and cycles only. [`RESULTS.md`](RESULTS.md) lists bit-exactness, cosine similarity and relative error against the FP32 reference, and npu_model model cycles (not RTL cycles) for each case, run on npu_model 47b8599 with `numerics="rtl"`.
+`reference.py` provides FP32 PyTorch references for the [shared bench](../../lib/README.md): 2 cases (TinyLlama gate SiLU and up multiply with FP8 output); no Atlas-arithmetic golden yet, so they report fidelity and cycles only. [`RESULTS.md`](RESULTS.md) reports exactness, FP32 fidelity, and model cycles under the [shared bench conventions](../../README.md#model-coverage).
 
 ## Tests and checks
 
-Run `make test-lib test-projection_gemm test-coverage NPU_MODEL=/path/to/npu-model` from the repository root. See [shared test coverage](../../README.md#running-the-tests).
+From the repository root, run `make test-lib test-projection_gemm test-coverage NPU_MODEL=/path/to/npu-model`; see [shared coverage](../../README.md#running-the-tests).
 
 `checked_assembly` (`lib/atlas_program_checks.py`) admits a hook only when the recipe names none of the registers it writes; `kernels/projection_gemm/tests/test_program_checks.py` and `test_program_legacy_epilogue.py` cover every recipe with hooks. In atlas-mlir, `test/test_tiny_fusion.py` and the Smol fusion tests check staged layouts, and the capture flows execute every fused launch on npu_model `47b8599`.
 

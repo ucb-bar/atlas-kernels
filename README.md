@@ -2,15 +2,15 @@
 
 Kernels written for the [Atlas NPU](https://github.com/ucb-bar/atlas-npu).
 
-Device-kernel generators for the Atlas NPU, with the shared helpers and golden references that check them. Each generator is a Python module that emits Atlas assembly text for one launch; npu_model's assembler encodes it, and programs are checked bit-exactly against unmodified npu_model `47b8599` with `numerics="rtl"`. The library holds every kernel that the TinyLlama, SmolVLA, and ResNet50 bringups launch. [atlas-mlir](https://github.com/ucb-bar/atlas-mlir) pins it as the `third_party/atlas-kernels` submodule and builds host programs, captures, and ELFs on top of it.
+Python generators emit Atlas assembly for the TinyLlama, SmolVLA, and ResNet50 bringups. [atlas-mlir](https://github.com/ucb-bar/atlas-mlir) pins this library at `third_party/atlas-kernels` and builds host programs, captures, and ELFs.
 
-The generators are hand-written schedules in Python; no kernel is lowered from the Atlas MLIR dialect yet. `lib/atlas_backend.py run --backend atlas-mlir` adds an enforcing comparison gate around the assembler path: it translates assembly to machine IR, runs `atlas-opt` verifiers and `atlas-emit`, and refuses any program whose words differ from the assembler's. The wrapper returns the assembler-produced program. Host graphs (the C that sequences launches and runs host-side operators) live in atlas-mlir and Merlin, not here.
+Schedules are hand-written Python, and host graphs are hand-written C in atlas-mlir and Merlin. No kernel is lowered from the Atlas MLIR dialect yet. The default encoder is npu_model's assembler; the optional [compiler comparison gate](lib/README.md#compiler-backend-atlas_asm_mlirpy-atlas_backendpy) enforces identical words and returns the assembler-produced program.
 
 ## How this fits with atlas-mlir and Merlin
 
 This repository owns the Atlas Python kernel generators in `kernels/<family>/`, shared helpers in `lib/`, and golden references in `lib/golden/`. [atlas-mlir](https://github.com/ucb-bar/atlas-mlir/tree/sota/bringup-performance) (PR [#26](https://github.com/ucb-bar/atlas-mlir/pull/26)) pins it as the `third_party/atlas-kernels` submodule and retains the compiler, model bringup tooling, and host entry points. Merlin's [`examples/atlas/comparisons/`](https://github.com/reed-nicolas/merlin/tree/atlas/sota-bringup-evidence/examples/atlas/comparisons) (PR [#55](https://github.com/ucb-bar/merlin/pull/55)) retains the PyTorch captures, hand-written model C graphs, and comparison workflow. See the [model bringup guide](https://github.com/ucb-bar/atlas-mlir/blob/sota/bringup-performance/docs/bringing-up-a-model.md) for the end-to-end flow and its current limits.
 
-The [model coverage table](coverage/COVERAGE.md) maps exported TinyLlama and SmolVLA ops and shapes to kernel families, host code, or build-time constants. Its `coverage/mapping.yaml` contains authored placement policy for the qualified builds. Coverage percentages partition exported FLOPs according to that policy; they do not measure device execution. The `select` rules in each family's `kernel.yaml` describe which family and variant serve an op, dtype, and shape. Merlin #55's `examples/atlas/phase1/kernel_library/generate_selection.py` reads these manifests and the coverage data to generate its pinned authoring registry, which remains disabled for Atlas compiler authoring and has no Atlas compile/runtime kernel-selection consumer. Its checks cover Linear K/N against family rules, declared dtypes, required mnemonics, and authored projection variants; they do not check Linear M or all family geometry. The model kernels emit Atlas assembly text that npu_model's assembler encodes by default (with an optional enforcing compiler comparison through `lib/atlas_backend.py run --backend atlas-mlir`), and the host graphs remain hand-written C.
+[Model coverage](coverage/README.md) maps exported ops and shapes to authored placement, with [generated tables](coverage/COVERAGE.md). It also explains the family `kernel.yaml` selection rules, Merlin registry, and limits of their checks.
 
 ## Layout
 
@@ -41,7 +41,7 @@ coverage/               per-model coverage (COVERAGE.md), the standalone bench t
 
 ### Module names
 
-The generator modules retain their atlas-mlir `tools/` names for bare-name import compatibility. The [family guides](#layout) and their `kernel.yaml` manifests document kernel entry points and variants; [lib/README.md](lib/README.md) documents shared helpers and independent arithmetic references. Module basenames must remain unique across the library.
+Generator modules retain their atlas-mlir `tools/` names for bare-name imports. Module basenames must be unique.
 
 ## Running the tests
 
@@ -71,18 +71,15 @@ It writes the program text (`.S`), the 32-bit words npu_model's assembler produc
 
 ## How kernels are checked against npu_model
 
-Kernels are checked at three levels, and their encoding can be checked by a fourth.
+Checks combine static register admission, symbolic DMA/MXU schedule proofs, independent rational and NumPy references, frozen default-program digests, and execution against unmodified npu_model `47b8599` with `numerics="rtl"`. Execution compares the entire DRAM arena, including guards. Attention v2 uses `check_program_v2`; contraction entry points use `checked_assembly`. The reuse interpreter checks addresses, K order, banks, and output placement. atlas-mlir capture/export flows check real model inputs; TinyLlama uses `tools/tiny_full/export_capture.py --qualify-launches`.
 
-1. Static checks at generation time. Contraction entry points are wrapped by `lib/atlas_program_checks.py` `checked_assembly`, which rejects odd matrix-register pairs, bank aliases, and scalar-scratch collisions between a schedule and its fused epilogue. Attention v2 programs pass `check_program_v2`.
-2. Symbolic and golden checks in the tests here. The reuse proofs (`kernels/projection_gemm/tests/reuse_proof.py`) interpret every DMA, wait, and MXU operation of a schedule and check addresses, K order, bank ownership, and output placement. `lib/golden/` provides an exact rational FP8/BF16 tile oracle and an equivalent NumPy ordered matmul for whole-matrix references. Frozen SHA-256 digests guard the default programs against unintended change.
-3. Execution on npu_model. `lib/atlas_execution.py` `Executor` assembles a program with npu_model's own assembler, runs it on `ArchState` with `numerics="rtl"`, refuses any npu_model revision other than `47b8599`, and compares the complete final DRAM arena (the output and everything outside it) with the expected bytes. `lib/atlas_rtl_reference.py` executes instruction by instruction with `numerics="rtl"`, including scalar branch delay slots; the ResNet layout-kernel tests use it. atlas-mlir's capture and export flows run model launches through `Executor` on real captured inputs (for TinyLlama, `tools/tiny_full/export_capture.py --qualify-launches` checks every launch).
-4. Optional enforcing compiler comparison. `lib/atlas_backend.py run --backend atlas-mlir` wraps the assembler path and translates each intercepted program to Atlas machine IR, runs `atlas-opt --verify-atlas-machine-stream` and `--verify-atlas-timing`, encodes it with `atlas-emit`, and requires the words to equal npu_model's assembler words. Each program gets a tier: `verified` (both verifiers accept it without input assumptions), `contract-verified` (both accept under an explicit named DRAM image contract), `stream-verified` (the machine-stream verifier accepts it and the timing verifier rejects it), or `encode-only` (no verifier accepted it or verification was skipped). The recorded CFG-verifier census covers 1,589 distinct programs and 1,487,694 words from the TinyLlama, SmolVLA, and ResNet50 kit ELFs: 1,544 `verified`, 0 `contract-verified`, 45 `stream-verified`, and 0 `encode-only`, with all words equal to the assembler and embedded binaries. The 45 original attention programs still reject DELAY-before-halt under exact metadata contracts; the opt-in halt variant reaches `contract-verified` under those assumptions. These are follow-up receipts, not a rerun at the integrated pin. [`lib/README.md`](lib/README.md#tiers) records the original compiler baseline, the updated census, the limits, and the commands.
+See [shared helpers and backend tiers](lib/README.md) for execution APIs, compiler comparison commands, verifier census, and conditional contracts. See [family guides](#layout) for numerical scope and missing goldens.
 
 ## Using the library from atlas-mlir
 
 atlas-mlir imports these modules by bare name, exactly as it did when they lived in its `tools/` directory. Its `tools/kernel_library.py` puts this submodule on `sys.path` and imports `atlas_kernels_path`; every atlas-mlir file that imports a kernel imports `kernel_library` first. Module basenames are unique across the library (`lib/tests/test_library_layout.py` checks it), so `atlas_kernels_path.module_path("atlas_program.py")` names the one file that defines a module, and atlas-mlir resolves source pins through `kernel_library.source_path` and `kernel_library.code_sources`.
 
-The integration results describe atlas-kernels `6123bef` at atlas-mlir gate `0c0edf7`; later source edits require fresh qualification. The projection and Smol fusion generators import atlas-mlir host helpers (`atlas_program` imports `run_model_tile.validate_archive_members`; the Smol fusion generators import `chipyard.arena.relocate_assembly`). Inside atlas-mlir the real modules load. When this repository runs on its own, `atlas_kernels_path` serves verbatim stand-ins from `lib/fallback/`, through a finder consulted only after every normal import has failed.
+Integration evidence covers atlas-kernels `6123bef` at atlas-mlir gate `0c0edf7`; later edits need fresh qualification. See [fallback helpers](lib/README.md) for standalone imports.
 
 ## Adding a kernel
 
@@ -93,11 +90,13 @@ The integration results describe atlas-kernels `6123bef` at atlas-mlir gate `0c0
 
 ## Model coverage
 
-[`coverage/COVERAGE.md`](coverage/COVERAGE.md) lists, for TinyLlama and SmolVLA, every operator `torch.export` finds at every shape and its authored placement: on an Atlas kernel family here, in host C, or as a build-time constant. Percentages partition exported FLOPs by `coverage/mapping.yaml` policy, rather than measuring device execution. Mandatory launch totals are checked against authored qualified-build expectations. The CTest `atlas-python-test_model_coverage` in atlas-mlir compares the hand-written TinyLlama and SmolVLA device plans against these fixtures. It is the basis for kernel ablation and optimization work. `make coverage` regenerates it from the committed fixtures.
+[Coverage policy and regeneration](coverage/README.md) explain exported ops, authored placement, launch-count checks, and ablation data. `make coverage` regenerates the table.
 
-[`coverage/RESULTS.md`](coverage/RESULTS.md) is the per-kernel bench table from `lib/kernel_bench.py`: one representative real shape per family and model, on seeded synthetic inputs, with bit-exactness against `lib/golden` where a golden exists, cosine similarity and relative error against an FP32 PyTorch reference, and cycle counts. The cycles are npu_model Core cycle-model counts, not RTL cycles. [Per-family RTL results](coverage/RTL-RESULTS.md) compare the same programs and input arenas on standalone AtlasCore Verilator and npu_model, with every reduced shape labeled. [The RTL workflow](RTL.md) documents the pinned build, runner, output checks, and cycle conventions.
+[Per-kernel benchmarks](coverage/RESULTS.md) use representative shapes and seeded inputs, independent goldens where available, FP32 fidelity, and npu_model Core cycles. These are model cycles. [RTL results](coverage/RTL-RESULTS.md) and the [RTL workflow](RTL.md) report standalone AtlasCore measurements and explicitly label reduced shapes.
 
 ## Starting a new model
+
+For partial random-weight Gemma 2 and PI0 workflows, see the [starter guides](coverage/examples/STARTERS.md).
 
 Start with a PyTorch model, this repository, the Atlas compiler binaries, and unmodified npu_model `47b8599d8ffbe5ddd96059ffe2b5be2427a410f5`. Clone npu_model with `git clone git@github.com:ucb-ee194-tapeout/npu_model.git`, then check out that commit. This requires access to the ucb-ee194-tapeout GitHub organization. `EXPORT_PYTHON` runs `torch.export` and needs the model's PyTorch dependencies and NumPy; the recorded TinyLlama export uses Python 3.10.14 and Transformers 5.4.0. `MODEL_PYTHON` runs the generators and npu_model, and must be Python >=3.14 with torch, NumPy, and npu_model available. Keep these interpreters separate when their dependencies require different Python versions. The causal-decoder helper accepts `TORCH_PYTHON` as a compatibility fallback for either unset interpreter; it is suitable only when that interpreter meets both sets of requirements. The driver `python3` needs PyYAML for `build_table.py`.
 
@@ -117,7 +116,7 @@ PYTHONPATH="$NPU_MODEL" ATLAS_NPU_MODEL_ROOT="$NPU_MODEL" "$MODEL_PYTHON" covera
 less "$OUT/bench/MODEL-BENCH.md"
 ```
 
-Each launch comes from its family's `gen.py`; the bench translates its assembly to Atlas machine IR, checks it with `atlas-opt`, compares `atlas-emit` words with the assembler's, and executes the assembler-produced program on npu_model with `numerics="rtl"`. `--min-tier stream-verified` requires machine-stream verification; the timing verifier can still reject a launch, and its result is reported. The schedules remain hand-written Python generators, and model host graphs remain hand-written C.
+The bench uses family `gen.py` entry points, the [compiler gate](lib/README.md#tiers), and npu_model execution. `--min-tier stream-verified` requires stream verification while retaining timing rejections in the report.
 
 Start the mapping from [`coverage/examples/causal_decoder/mapping.yaml`](coverage/examples/causal_decoder/mapping.yaml), which maps Merlin's small `examples/workloads/causal_decoder` loader: Linear layers to `projection_gemm`, RMSNorm to `rmsnorm`, SiLU and the gate multiply to `epilogue`, and residual adds to `rne_add`, each with the reason it fits, and leaves its head-dimension-8 attention unmapped. Each rule's optional `launch` hint (documented at the top of [`coverage/mapping.yaml`](coverage/mapping.yaml)) tells `bench_model.py` which launches the rule's rows become; Linear and Conv2d rows need none. [`coverage/examples/causal_decoder/MODEL-BENCH.md`](coverage/examples/causal_decoder/MODEL-BENCH.md) is regenerated with the separate interpreters and explicit compiler settings:
 

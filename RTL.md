@@ -2,7 +2,7 @@
 
 [Per-family RTL results](coverage/RTL-RESULTS.md) compare identical programs and input arenas on AtlasCore Verilator and unmodified npu_model `47b8599d8ffbe5ddd96059ffe2b5be2427a410f5` with `numerics="rtl"`, for both model matched and synthetic DMA memory services. Four cases use published model launch geometries, and five use explicitly labeled reductions. The ResNet patch case measures the 3x3 gather operation and its DMA readback, excluding the following GEMM.
 
-The build extracts the selected Scala sources directly from Atlas RTL commit `0079c0541111197741a231c002e3843fa6f545b2` and its pinned FP submodules, compiles them with `java` and `scalac`, emits SystemVerilog with Chisel and firtool, and builds the C++ TileLink harness with Verilator. It needs cached dependencies, rather than invoking sbt, mill, Chipyard make, or the VCS simulator. Original checkouts are read-only. Both source extraction and artifact access reject restricted path components and symlinks; Git trees are pruned before descent.
+The standalone build extracts Scala sources from Atlas RTL commit `0079c0541111197741a231c002e3843fa6f545b2` and its pinned FP submodules, compiles them with `java` and `scalac`, emits SystemVerilog with Chisel and firtool, and builds the C++ TileLink harness with Verilator. It needs cached dependencies, rather than invoking sbt, mill, Chipyard make, or the VCS simulator. Checkouts are read-only; extraction and artifact access reject restricted paths and symlinks, pruning Git trees before descent.
 
 ## Build
 
@@ -25,7 +25,7 @@ Set `MODEL_PYTHON` to the Python 3.14 interpreter and `NPU_MODEL` to its unmodif
   --out "$RTL_OUT" --jobs 12
 ```
 
-`RTL_OUT` must be fresh unless `--resume` explicitly selects a previous attempt from this same pin. All source, dependency, tool, and output paths are explicit arguments. The build requires 20 GiB free and caps compilation at 12 workers. Assertions remain enabled.
+`RTL_OUT` must be fresh unless `--resume` explicitly selects a previous attempt from this same pin. All paths are explicit. The build requires 20 GiB free and caps compilation at 12 workers. Assertions remain enabled.
 
 The observed Chipyard dependency checkout is commit `48c3a7d11f6de3f0cecb33ae6a31c24ec26ff9d8`; its `variables.mk` defines the following dependency preparation command. This command is documentation only and was not run for these measurements. The cached assembly has no original build receipt or embedded commit, so its historical source cleanliness and exact origin remain unattested; a fresh teammate dependency assembly is PENDING. The accepted artifact is identified by its exact SHA-256 above, and `--classpath-revision` records the observed checkout separately.
 
@@ -50,7 +50,7 @@ The model interpreter needs Python 3.14 with PyTorch and NumPy. Set `MODEL_PYTHO
   --report coverage/RTL-RESULTS.md
 ```
 
-The default `--memory both` runs all nine cases with each service and writes `npu-model/<family>/` and `synthetic/<family>/` under the output directory. Use `--memory npu-model` or `--memory synthetic` to select one service and `--family NAME` to run one case. Each case writes assembly, emitted instruction words, machine IR, initial input bytes, model and RTL output bytes, a simulation log, and `result.json`. Backend emission must equal npu_model's assembler. The default minimum tier is `encode-only`, so verifier rejections remain explicit in the receipt rather than preventing an RTL experiment. The recorded family runs report their actual tiers. The runner checks the simulator hash and revision against its build receipt. A missing family remains `PENDING`; any output difference, timeout, or failed command fails qualification.
+The default `--memory both` runs all nine cases with each service and writes `npu-model/<family>/` and `synthetic/<family>/` under the output directory. Use `--memory npu-model` or `--memory synthetic` to select one service and `--family NAME` to run one case. Each case writes assembly, emitted instruction words, machine IR, initial input bytes, model and RTL output bytes, a simulation log, and `result.json`. Backend emission must equal npu_model's assembler. The default minimum tier is `encode-only`, so verifier rejections remain explicit in the receipt rather than preventing an RTL experiment. Receipts report actual tiers. The runner checks the simulator hash and revision against its build receipt. A missing family remains `PENDING`; any output difference, timeout, or failed command fails qualification.
 
 The complete output is compared bit for bit against the model, including padded rows. Decode RoPE additionally checks the independent arithmetic golden over its one logical row; its known signed-zero differences in padded rows are recorded separately. Those padding bytes still participate in the full RTL/model comparison.
 
@@ -69,7 +69,7 @@ The complete output is compared bit for bit against the model, including padded 
   --shape 32x32x960 --family projection_gemm --memory both --out "$CUSTOM_OUT"
 ```
 
-The same provided program is encoded through `lib/atlas_backend.py`, checked against the assembler, and executed by both the functional and timed model before RTL simulation. A custom family run is a separate experiment and does not replace the nine-case table unless all nine cases are supplied.
+The provided program is encoded through `lib/atlas_backend.py`, checked against the assembler, and executed by both the functional and timed model before RTL simulation. A custom family run is a separate experiment and does not replace the nine-case table unless all nine cases are supplied.
 
 ## Cycle interpretation
 

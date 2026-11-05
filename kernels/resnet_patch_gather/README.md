@@ -1,8 +1,6 @@
 # resnet_patch_gather
 
-Device row gathers that build a convolution's A operand directly from an FP8 channels-last tensor, so a convolution runs as a [projection_gemm](../projection_gemm/README.md) launch without a host im2col. A 1x1 input gathers one 32-byte channel line per output row. A kxk input (odd kernel, same padding) orders K as (ky, kx, channel) with the weights permuted to match, so every A tile row is still one 32-byte channel line of one tap; padded taps and padded output rows read a declared zero line.
-
-Stage: the A-operand source of a projection launch (`direct_input=`).
+Device row gathers build a convolution's A operand from an FP8 channels-last tensor via [projection_gemm](../projection_gemm/README.md) `direct_input=`, avoiding host im2col. A 1x1 input gathers one 32-byte channel line per output row. A kxk input (odd kernel, same padding) orders K as (ky, kx, channel) with the weights permuted to match, so every A tile row is still one 32-byte channel line of one tap; padded taps and padded output rows read a declared zero line.
 
 ## Entry points
 
