@@ -1,0 +1,14 @@
+schema: atlas.coverage.mapping.v1
+kernels:
+  projection_gemm: Candidate FP8 projection GEMM; arithmetic conversion still needs admission
+builds: {}
+bench:
+  gemma2:
+    panel_rows: 128
+    panel_columns: [{max_k: 2048, n: 2048}, {n: 1024}]
+rules:
+  gemma2:
+    - match: {op: aten.linear.default}
+      where: atlas:projection_gemm
+      cite: [atlas-kernels:kernels/projection_gemm/gen.py, atlas-kernels:kernels/projection_gemm/atlas_program.py]
+      note: Candidate projection only; choose existing TinyLlama panel policy for this starter, not a qualified Gemma2 schedule. Quantization and model accuracy remain unqualified.

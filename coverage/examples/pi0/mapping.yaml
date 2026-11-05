@@ -1,0 +1,21 @@
+schema: atlas.coverage.mapping.v1
+kernels:
+  projection_gemm: FP8 E4M3 projection GEMM
+  attention: BF16 attention candidate, limited to head dimension 64
+  rmsnorm: RMSNorm candidate, limited to width 2048 and 32 or 128 rows
+builds: {}
+bench:
+  pi0:
+    panel_rows: 128
+    panel_columns:
+      - {max_k: 2048, n: 2048}
+      - {n: 1024}
+rules:
+  pi0:
+    - match: {op: [aten.linear.default, aten.conv2d.default, aten.conv2d.padding]}
+      where: atlas:projection_gemm
+      note: >-
+        Candidate matrix product only, with FP8 inputs and BF16 accumulation. Conv2d needs an
+        unimplemented host patch gather. Bias remains unmapped. This is a synthetic per-launch
+        arithmetic experiment, with no qualified PI0 precision, scale, layout, or staging policy.
+      cite: [atlas-kernels:kernels/projection_gemm/reference.py, atlas-kernels:kernels/projection_gemm/gen.py]

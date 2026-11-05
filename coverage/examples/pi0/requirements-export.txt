@@ -1,0 +1,5 @@
+torch==2.10.0
+numpy==1.26.4
+transformers==4.57.1
+lerobot==0.5.1
+PyYAML==6.0.3
