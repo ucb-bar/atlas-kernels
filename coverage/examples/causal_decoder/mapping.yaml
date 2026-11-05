@@ -25,36 +25,14 @@ bench:
 
 rules:
   causal_decoder:
-    - match: {op: aten.linear.default}
-      where: atlas:projection_gemm
-      note: >-
-        Linear without bias is Y = X W^T, the projection GEMM's product (kernels/projection_gemm/reference.py); the
-        device computes it from FP8 E4M3 operands with BF16 accumulation, so fidelity, not equality, is what to expect
-      cite: [atlas-kernels:kernels/projection_gemm/reference.py, atlas-kernels:kernels/projection_gemm/atlas_program.py]
-    - match: {op: aten.rms_norm.default}
-      where: atlas:rmsnorm
-      launch: {family: rmsnorm, per: {op: aten.rms_norm.default}}
-      note: >-
-        torch.nn.RMSNorm with a weight is the kernel's x * rsqrt(mean(x^2) + eps) * gamma (kernels/rmsnorm/reference.py);
-        the kernel uses eps 1e-5 where torch.nn.RMSNorm(eps=None) uses the float32 machine epsilon, and the streamed
-        standalone generator supports this width-32 norm with physical rows padded to 32
-      cite: [atlas-kernels:kernels/rmsnorm/reference.py, atlas-kernels:kernels/rmsnorm/gen.py]
-    - match: {op: aten.silu.default, source: 'loader.py:forward:30'}
-      where: atlas:epilogue
-      launch: {family: epilogue, fuse_into: [gate], steps: [silu]}
-      note: SiLU applied to the gate projection's output, the gate epilogue Step('silu') (kernels/epilogue/reference.py)
-      cite: [atlas-kernels:kernels/epilogue/reference.py, atlas-kernels:kernels/epilogue/atlas_epilogue.py]
-    - match: {op: aten.mul.Tensor, source: 'loader.py:forward:30'}
-      where: atlas:epilogue
-      launch: {family: epilogue, fuse_into: [up], steps: [mul], output: fp8, consumer_width: 64}
-      note: >-
-        SiLU(gate) x up multiplies the up projection's output by the gate tile, the up epilogue Step('mul') with FP8 output
-        in the layout the down projection reads (64 wide)
-      cite: [atlas-kernels:kernels/epilogue/reference.py, atlas-kernels:kernels/epilogue/atlas_epilogue.py]
-    - match: {op: aten.add.Tensor, source: ['loader.py:forward:28', 'loader.py:forward:30'], out: [1, 8, 32]}
-      where: atlas:rne_add
-      launch: {family: rne_add, fuse_into: [projection, down]}
-      note: >-
-        hidden + projection(...) and hidden + down(...) add a residual to a projection output, the Step('add_rne')
-        epilogue (kernels/rne_add/reference.py): the exact sum rounded to BF16
-      cite: [atlas-kernels:kernels/rne_add/reference.py, atlas-kernels:kernels/rne_add/atlas_rne_add.py]
+    - {match: {op: aten.linear.default}, where: atlas:projection_gemm, note: "Linear without bias is Y = X W^T, the projection GEMM's product (kernels/projection_gemm/reference.py); the device computes it from FP8 E4M3 operands with
+      BF16 accumulation, so fidelity, not equality, is what to expect", cite: [atlas-kernels:kernels/projection_gemm/reference.py, atlas-kernels:kernels/projection_gemm/atlas_program.py]}
+    - {match: {op: aten.rms_norm.default}, where: atlas:rmsnorm, launch: {family: rmsnorm, per: {op: aten.rms_norm.default}}, note: "torch.nn.RMSNorm with a weight is the kernel's x * rsqrt(mean(x^2) + eps) * gamma (kernels/rmsnorm/reference.py);
+      the kernel uses eps 1e-5 where torch.nn.RMSNorm(eps=None) uses the float32 machine epsilon, and the streamed standalone generator supports this width-32 norm with physical rows padded to 32", cite: [atlas-kernels:kernels/rmsnorm/reference.py,
+      atlas-kernels:kernels/rmsnorm/gen.py]}
+    - {match: {op: aten.silu.default, source: 'loader.py:forward:30'}, where: atlas:epilogue, launch: {family: epilogue, fuse_into: [gate], steps: [silu]}, note: "SiLU applied to the gate projection's output, the gate epilogue Step('silu')
+      (kernels/epilogue/reference.py)", cite: [atlas-kernels:kernels/epilogue/reference.py, atlas-kernels:kernels/epilogue/atlas_epilogue.py]}
+    - {match: {op: aten.mul.Tensor, source: 'loader.py:forward:30'}, where: atlas:epilogue, launch: {family: epilogue, fuse_into: [up], steps: [mul], output: fp8, consumer_width: 64}, note: "SiLU(gate) x up multiplies the up projection's
+      output by the gate tile, the up epilogue Step('mul') with FP8 output in the layout the down projection reads (64 wide)", cite: [atlas-kernels:kernels/epilogue/reference.py, atlas-kernels:kernels/epilogue/atlas_epilogue.py]}
+    - {match: {op: aten.add.Tensor, source: ['loader.py:forward:28', 'loader.py:forward:30'], out: [1, 8, 32]}, where: atlas:rne_add, launch: {family: rne_add, fuse_into: [projection, down]}, note: "hidden + projection(...) and hidden
+      + down(...) add a residual to a projection output, the Step('add_rne') epilogue (kernels/rne_add/reference.py): the exact sum rounded to BF16", cite: [atlas-kernels:kernels/rne_add/reference.py, atlas-kernels:kernels/rne_add/atlas_rne_add.py]}

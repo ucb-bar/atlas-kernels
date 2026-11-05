@@ -6,12 +6,8 @@ family: projection_gemm
 summary: "FP8 E4M3 GEMM on MXU0, ascending-K BF16 accumulation, one pop to BF16 with a power-of-two output rescale"
 stage: standalone
 entry_points:
-  - module: atlas_program
-    function: assembly
-    parameters: "m, k, n, output_offset, rescale_exponent=None, *, resident_b, pretranspose_resident_b, resident_a, traffic_reuse, epilogue, direct_input, weight_source"
-  - module: atlas_program
-    function: dma_load_bytes
-    parameters: "m, k, n, *, resident_a, resident_b, traffic_reuse, epilogue, direct_input"
+  - {module: atlas_program, function: assembly, parameters: "m, k, n, output_offset, rescale_exponent=None, *, resident_b, pretranspose_resident_b, resident_a, traffic_reuse, epilogue, direct_input, weight_source"}
+  - {module: atlas_program, function: dma_load_bytes, parameters: "m, k, n, *, resident_a, resident_b, traffic_reuse, epilogue, direct_input"}
 ops: [aten.linear, aten.mm, aten.addmm, aten.convolution (as GEMM)]
 dtypes:
   a: fp8_e4m3
@@ -24,14 +20,8 @@ constraints:
   n: multiple of 32
   resident: an operand of at most 256 KiB may stay in VMEM bank 1
 select:
-  - op: aten.linear
-    dtype: fp8_e4m3
-    shape: MxKxN in a variant table below
-    variant: that variant (traffic_reuse=True)
-  - op: aten.linear
-    dtype: fp8_e4m3
-    shape: any other multiple-of-32 MxKxN
-    variant: default
+  - {op: aten.linear, dtype: fp8_e4m3, shape: MxKxN in a variant table below, variant: that variant (traffic_reuse=True)}
+  - {op: aten.linear, dtype: fp8_e4m3, shape: any other multiple-of-32 MxKxN, variant: default}
 variants:
   - name: tiny
     module: atlas_program_reuse_tiny

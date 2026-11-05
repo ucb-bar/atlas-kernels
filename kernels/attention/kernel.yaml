@@ -6,33 +6,16 @@ family: attention
 summary: "head-dimension-64/128/256 attention: QK^T, masked softmax (vexp, vrecip, fixed P scale 256), PV, integral GQA"
 stage: standalone
 entry_points:
-  - module: atlas_attention_v2_program
-    function: AttentionV2Config
-    parameters: "query_rows, keys, query_heads, kv_heads, head_dim=64, mask, query_start, scale=0.125, q/k/v_exponent, p_exponent=-8, output_fp8, o_exponent, packed_decode"
-  - module: atlas_attention_v2_program
-    function: stage_v2
-    parameters: "config, q, k, v, mask_tiles=None"
-  - module: atlas_attention_v2_program
-    function: assembly_v2
-    parameters: "config, offsets, *, dram_base=0x90000000"
-  - module: atlas_attention_program
-    function: assembly
-    parameters: version 1 (legacy TinyLlama worker)
-  - module: atlas_attention_wide_program
-    function: AttentionWideConfig
-    parameters: "query_rows, keys, query_heads, kv_heads, head_dim=128|256, mask=none|causal, query_start, scale=None (nearest-even BF16), q/k/v_exponent, p_exponent=-8, output_fp8, o_exponent, packed_decode=False"
-  - module: atlas_attention_wide_program
-    function: stage_wide
-    parameters: "config, q, k, v, mask_tiles=None"
-  - module: atlas_attention_wide_program
-    function: assembly_wide
-    parameters: "config, offsets, *, dram_base=0x90000000"
-  - module: atlas_attention_v2_halt
-    function: assembly_v2
-    parameters: "config, offsets, *, dram_base=0x90000000; explicit v2-no-halt-delay variant"
-  - module: atlas_attention_vision_fast
-    function: assembly_v2
-    parameters: "config, offsets, *, dram_base=0x90000000; opt-in vision-fast, head_dim=64, unmasked whole tiles, equal heads, BF16 output"
+  - {module: atlas_attention_v2_program, function: AttentionV2Config, parameters: "query_rows, keys, query_heads, kv_heads, head_dim=64, mask, query_start, scale=0.125, q/k/v_exponent, p_exponent=-8, output_fp8, o_exponent, packed_decode"}
+  - {module: atlas_attention_v2_program, function: stage_v2, parameters: "config, q, k, v, mask_tiles=None"}
+  - {module: atlas_attention_v2_program, function: assembly_v2, parameters: "config, offsets, *, dram_base=0x90000000"}
+  - {module: atlas_attention_program, function: assembly, parameters: version 1 (legacy TinyLlama worker)}
+  - {module: atlas_attention_wide_program, function: AttentionWideConfig, parameters: "query_rows, keys, query_heads, kv_heads, head_dim=128|256, mask=none|causal, query_start, scale=None (nearest-even BF16), q/k/v_exponent, p_exponent=-8,
+    output_fp8, o_exponent, packed_decode=False"}
+  - {module: atlas_attention_wide_program, function: stage_wide, parameters: "config, q, k, v, mask_tiles=None"}
+  - {module: atlas_attention_wide_program, function: assembly_wide, parameters: "config, offsets, *, dram_base=0x90000000"}
+  - {module: atlas_attention_v2_halt, function: assembly_v2, parameters: "config, offsets, *, dram_base=0x90000000; explicit v2-no-halt-delay variant"}
+  - {module: atlas_attention_vision_fast, function: assembly_v2, parameters: "config, offsets, *, dram_base=0x90000000; opt-in vision-fast, head_dim=64, unmasked whole tiles, equal heads, BF16 output"}
 ops: [aten.scaled_dot_product_attention, "eager attention (aten.matmul, aten.softmax)"]
 dtypes:
   q: bf16 staged to fp8_e4m3
@@ -47,25 +30,12 @@ constraints:
   wide_dma: "every command <= 4096 bytes; wide head transfers are segmented"
   wide_decode: "ordinary padded head tiles, packed_decode=False"
 select:
-  - op: aten.scaled_dot_product_attention
-    dtype: bf16
-    shape: "head_dim 64, keys <= 2048"
-    variant: assembly_v2
-  - op: aten.scaled_dot_product_attention
-    dtype: bf16
-    shape: "head_dim 128, keys <= 2048, mask none or causal, query_tiles <= 128, query_tiles*key_tiles <= 2048"
-    variant: assembly_wide
-  - op: aten.scaled_dot_product_attention
-    dtype: bf16
-    shape: "head_dim 256, keys <= 1024, mask none or causal, query_tiles <= 128, query_tiles*key_tiles <= 2048"
-    variant: assembly_wide
+  - {op: aten.scaled_dot_product_attention, dtype: bf16, shape: "head_dim 64, keys <= 2048", variant: assembly_v2}
+  - {op: aten.scaled_dot_product_attention, dtype: bf16, shape: "head_dim 128, keys <= 2048, mask none or causal, query_tiles <= 128, query_tiles*key_tiles <= 2048", variant: assembly_wide}
+  - {op: aten.scaled_dot_product_attention, dtype: bf16, shape: "head_dim 256, keys <= 1024, mask none or causal, query_tiles <= 128, query_tiles*key_tiles <= 2048", variant: assembly_wide}
 models:
-  - model: tinyllama
-    use: "causal, FP8 output, 32/4 heads"
-    shapes: [128x128 prefill, 1x129 decode, 1x130 decode]
-  - model: smolvla
-    use: BF16 output
-    shapes: [1024x1024 vision 12/12, 177x177 prefix 15/5, 50x227 and 50x177 expert 15/5]
+  - {model: tinyllama, use: "causal, FP8 output, 32/4 heads", shapes: [128x128 prefill, 1x129 decode, 1x130 decode]}
+  - {model: smolvla, use: BF16 output, shapes: [1024x1024 vision 12/12, 177x177 prefix 15/5, 50x227 and 50x177 expert 15/5]}
 generator: "make gen-attention ARGS=\"--rows R --keys K --heads Q/KV [--head-dim 64|128|256] [--variant v2|v2-no-halt-delay|vision-fast] [--causal] [--query-start S] [--fp8]\""
 tests: [tests/test_vision_fast.py, tests/test_attention_wide.py, tests/test_attention_halt.py, ../../lib/tests/test_kernel_manifests.py, ../../lib/tests/test_kernel_bench.py, ../../coverage/tests/test_bench_model.py]
 checks: [check_program_v2 static check, wide exact single-key GQA with Q=K=0, seeded random multi-key GQA fidelity and exact timed-versus-functional agreement, timed segmented-DMA regression, SHA-pinned by atlas-mlir tools/tiny_full/attention_v2_worker.py, every TinyLlama and SmolVLA attention launch executed on npu_model 47b8599 numerics=rtl]

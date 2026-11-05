@@ -78,224 +78,102 @@ cites:
 rules:
   tinyllama:
     # Projections: every Linear, prefill and decode, including lm_head.
-    - match: {op: aten.linear.default}
-      where: atlas:projection_gemm
-      cite: [atlas-kernels:kernels/projection_gemm/atlas_program.py, *tiny_plan, 'atlas-mlir:tools/tiny_full/tiny_full_model.c:114-116,133-146,308']
-    - match: {module: model.embed_tokens}
-      where: host:atlas-mlir/tools/tiny_full/tiny_full_model.c
-      note: embedding rows copied by token id
-      cite: ['atlas-mlir:tools/tiny_full/tiny_full_model.c:262-272']
-    - match: {module: model, op: [aten.le.*, aten.where.*, aten.expand.*], out: [1, 1, '*', '*']}
-      where: build:atlas-kernels/kernels/attention/atlas_attention_v2_program.py
-      note: causal mask is the generator's constant mask table (mask causal)
-      cite: ['atlas-kernels:kernels/attention/atlas_attention_v2_program.py:5,20,58', 'atlas-mlir:tools/tiny_full/attention_v2_export.py:27']
-    - match: {module: model}
-      where: host:atlas-mlir/tools/tiny_full/tiny_full_model.c
-      note: positions and cache positions
-      cite: ['atlas-mlir:tools/tiny_full/tiny_full_model.c:108']
-    - match: {module: model.rotary_emb}
-      where: build:atlas-mlir/tools/tiny_full/fusion.py
-      note: cos and sin tables packed at export (rope_tables)
-      cite: ['atlas-mlir:tools/tiny_full/fusion.py:17-25', *tiny_plan]
-    - match: {module: ['model.layers.*.input_layernorm', 'model.layers.*.post_attention_layernorm']}
-      where: atlas:rmsnorm
-      launch: {family: rmsnorm, per: {op: aten.mul.Tensor, dtype: bfloat16}}
-      cite: [atlas-kernels:kernels/rmsnorm/atlas_norm_postpass.py, 'atlas-mlir:tools/tiny_full/norm.py:19', 'atlas-mlir:tools/tiny_full/tiny_full_model.c:110-113,138-141']
-    - match: {module: model.layers.*.self_attn, source: 'modeling_llama.py:forward:26[234]'}
-      where: host:atlas-mlir/runtime/tiny_attention.c
-      note: head split of the projection output into the attention operand layout
-      cite: ['atlas-mlir:runtime/tiny_attention.c:78-110']
-    - match: {module: model.layers.*.self_attn, source: 'modeling_llama.py:forward:267'}
-      where: atlas:rope
-      launch: {family: rope, fuse_into: [model.layers.*.self_attn.q_proj, model.layers.*.self_attn.k_proj]}
-      note: q/k RoPE post-pass in both phases (PREFILL_ROPE, DECODE_ROPE; 44 rope panels per step)
-      cite: [atlas-kernels:kernels/rope/atlas_rope_postpass.py, 'atlas-mlir:tools/tiny_full/fusion.py:73-75', 'atlas-mlir:tools/tiny_full/tiny_full_model.c:107,117-121']
-    - match: {module: model.layers.*.self_attn, source: 'modeling_llama.py:forward:270'}
-      where: host:atlas-mlir/runtime/tiny_attention.c
-      note: KV cache append of rotated keys and values
-      cite: ['atlas-mlir:runtime/tiny_attention.c:78-110']
-    - match: {module: model.layers.*.self_attn, source: ['modeling_llama.py:forward:276', 'modeling_llama.py:forward:287']}
-      where: atlas:attention
-      launch: {family: attention, per: {op: aten.softmax.int}, kv_heads: 4, mask: causal, output_fp8: true}
-      note: GQA 32/4, d=64, scale 0.125, causal, FP8 output in the o_proj input layout
-      cite: [atlas-kernels:kernels/attention/atlas_attention_v2_program.py, 'atlas-mlir:tools/tiny_full/tiny_full_model.c:124', *tiny_plan]
-    - match: {module: model.layers.*, op: aten.add.Tensor, phase: prefill}
-      where: atlas:rne_add
-      launch: {family: rne_add, fuse_into: [model.layers.*.self_attn.o_proj, model.layers.*.mlp.down_proj]}
-      note: prefill o and down epilogues add the residual (add_rne, 66 panels)
-      cite: [atlas-kernels:kernels/rne_add/atlas_rne_add.py, 'atlas-mlir:tools/tiny_full/fusion.py:63-64', 'atlas-mlir:tools/tiny_full/tiny_full_model.c:105,133-134,144-145']
-    - match: {module: model.layers.*, op: aten.add.Tensor, phase: decode}
-      where: host:atlas-mlir/tools/tiny_full/tiny_full_model.c
-      note: decode residual adds (hidden_residual)
-      cite: ['atlas-mlir:tools/tiny_full/tiny_full_model.c:74-84,135,147']
-    - match: {module: [model.layers.*.mlp.act_fn, model.layers.*.mlp]}
-      where: atlas:epilogue
-      launch:
-        - {family: epilogue, rows: {op: aten.silu.default}, fuse_into: [model.layers.*.mlp.gate_proj], steps: [silu]}
-        - {family: epilogue, rows: {op: aten.mul.Tensor}, fuse_into: [model.layers.*.mlp.up_proj], steps: [mul], output: fp8, consumer_width: 5632}
-      note: SiLU in the gate epilogue, gate x up in the up epilogue with FP8 output
-      cite: [atlas-kernels:kernels/epilogue/atlas_epilogue.py, 'atlas-mlir:tools/tiny_full/fusion.py:65-68', 'atlas-mlir:tools/tiny_full/tiny_full_model.c:142-143']
-    - match: {module: model.norm}
-      where: host:atlas-mlir/tools/tiny_full/tiny_full_model.c
-      note: final RMSNorm before lm_head (hidden_rmsnorm)
-      cite: ['atlas-mlir:tools/tiny_full/tiny_full_model.c:41-72,304']
-    - match: {module: ''}
-      where: host:atlas-mlir/tools/tiny_full/tiny_full_model.c
-      note: last-row greedy argmax and token feedback
-      cite: ['atlas-mlir:tools/tiny_full/tiny_full_model.c:180-197,310']
+    - {match: {op: aten.linear.default}, where: atlas:projection_gemm, cite: [atlas-kernels:kernels/projection_gemm/atlas_program.py, *tiny_plan, 'atlas-mlir:tools/tiny_full/tiny_full_model.c:114-116,133-146,308']}
+    - {match: {module: model.embed_tokens}, where: host:atlas-mlir/tools/tiny_full/tiny_full_model.c, note: embedding rows copied by token id, cite: ['atlas-mlir:tools/tiny_full/tiny_full_model.c:262-272']}
+    - {match: {module: model, op: [aten.le.*, aten.where.*, aten.expand.*], out: [1, 1, '*', '*']}, where: build:atlas-kernels/kernels/attention/atlas_attention_v2_program.py, note: causal mask is the generator's constant mask table
+      (mask causal), cite: ['atlas-kernels:kernels/attention/atlas_attention_v2_program.py:5,20,58', 'atlas-mlir:tools/tiny_full/attention_v2_export.py:27']}
+    - {match: {module: model}, where: host:atlas-mlir/tools/tiny_full/tiny_full_model.c, note: positions and cache positions, cite: ['atlas-mlir:tools/tiny_full/tiny_full_model.c:108']}
+    - {match: {module: model.rotary_emb}, where: build:atlas-mlir/tools/tiny_full/fusion.py, note: cos and sin tables packed at export (rope_tables), cite: ['atlas-mlir:tools/tiny_full/fusion.py:17-25', *tiny_plan]}
+    - {match: {module: ['model.layers.*.input_layernorm', 'model.layers.*.post_attention_layernorm']}, where: atlas:rmsnorm, launch: {family: rmsnorm, per: {op: aten.mul.Tensor, dtype: bfloat16}}, cite: [atlas-kernels:kernels/rmsnorm/atlas_norm_postpass.py,
+      'atlas-mlir:tools/tiny_full/norm.py:19', 'atlas-mlir:tools/tiny_full/tiny_full_model.c:110-113,138-141']}
+    - {match: {module: model.layers.*.self_attn, source: 'modeling_llama.py:forward:26[234]'}, where: host:atlas-mlir/runtime/tiny_attention.c, note: head split of the projection output into the attention operand layout, cite: ['atlas-mlir:runtime/tiny_attention.c:78-110']}
+    - {match: {module: model.layers.*.self_attn, source: 'modeling_llama.py:forward:267'}, where: atlas:rope, launch: {family: rope, fuse_into: [model.layers.*.self_attn.q_proj, model.layers.*.self_attn.k_proj]}, note: 'q/k RoPE post-pass
+      in both phases (PREFILL_ROPE, DECODE_ROPE; 44 rope panels per step)', cite: [atlas-kernels:kernels/rope/atlas_rope_postpass.py, 'atlas-mlir:tools/tiny_full/fusion.py:73-75', 'atlas-mlir:tools/tiny_full/tiny_full_model.c:107,117-121']}
+    - {match: {module: model.layers.*.self_attn, source: 'modeling_llama.py:forward:270'}, where: host:atlas-mlir/runtime/tiny_attention.c, note: KV cache append of rotated keys and values, cite: ['atlas-mlir:runtime/tiny_attention.c:78-110']}
+    - {match: {module: model.layers.*.self_attn, source: ['modeling_llama.py:forward:276', 'modeling_llama.py:forward:287']}, where: atlas:attention, launch: {family: attention, per: {op: aten.softmax.int}, kv_heads: 4, mask: causal,
+      output_fp8: true}, note: 'GQA 32/4, d=64, scale 0.125, causal, FP8 output in the o_proj input layout', cite: [atlas-kernels:kernels/attention/atlas_attention_v2_program.py, 'atlas-mlir:tools/tiny_full/tiny_full_model.c:124', *tiny_plan]}
+    - {match: {module: model.layers.*, op: aten.add.Tensor, phase: prefill}, where: atlas:rne_add, launch: {family: rne_add, fuse_into: [model.layers.*.self_attn.o_proj, model.layers.*.mlp.down_proj]}, note: 'prefill o and down epilogues
+      add the residual (add_rne, 66 panels)', cite: [atlas-kernels:kernels/rne_add/atlas_rne_add.py, 'atlas-mlir:tools/tiny_full/fusion.py:63-64', 'atlas-mlir:tools/tiny_full/tiny_full_model.c:105,133-134,144-145']}
+    - {match: {module: model.layers.*, op: aten.add.Tensor, phase: decode}, where: host:atlas-mlir/tools/tiny_full/tiny_full_model.c, note: decode residual adds (hidden_residual), cite: ['atlas-mlir:tools/tiny_full/tiny_full_model.c:74-84,135,147']}
+    - {match: {module: [model.layers.*.mlp.act_fn, model.layers.*.mlp]}, where: atlas:epilogue, launch: [{family: epilogue, rows: {op: aten.silu.default}, fuse_into: [model.layers.*.mlp.gate_proj], steps: [silu]}, {family: epilogue,
+      rows: {op: aten.mul.Tensor}, fuse_into: [model.layers.*.mlp.up_proj], steps: [mul], output: fp8, consumer_width: 5632}], note: 'SiLU in the gate epilogue, gate x up in the up epilogue with FP8 output', cite: [atlas-kernels:kernels/epilogue/atlas_epilogue.py,
+      'atlas-mlir:tools/tiny_full/fusion.py:65-68', 'atlas-mlir:tools/tiny_full/tiny_full_model.c:142-143']}
+    - {match: {module: model.norm}, where: host:atlas-mlir/tools/tiny_full/tiny_full_model.c, note: final RMSNorm before lm_head (hidden_rmsnorm), cite: ['atlas-mlir:tools/tiny_full/tiny_full_model.c:41-72,304']}
+    - {match: {module: ''}, where: host:atlas-mlir/tools/tiny_full/tiny_full_model.c, note: last-row greedy argmax and token feedback, cite: ['atlas-mlir:tools/tiny_full/tiny_full_model.c:180-197,310']}
 
   smolvla:
     # Projections: every Linear and the patch Conv2d (bias added on the host except fused fc1).
-    - match: {op: aten.linear.default, module: vlm_with_expert.vlm.model.vision_model.encoder.layers.*.mlp.fc1}
-      where: atlas:projection_gemm
-      bias_where: atlas:smol_fusion
-      note: one projection call; its bias component runs in the fc1-bias-gelu-fp8 post-pass
-      cite: [atlas-kernels:kernels/projection_gemm/atlas_program.py, atlas-kernels:kernels/smol_fusion/smol_fusion_fp8.py, *smol_plan, 'merlin:examples/atlas/comparisons/smol_vision_graph.c:89-94']
-    - match: {op: [aten.linear.default, aten.conv2d.*]}
-      where: atlas:projection_gemm
-      bias_where: host:atlas-mlir/runtime/smol_policy_raw.c
-      note: bias added on the host in the panel unload except vision fc1
-      cite: [atlas-kernels:kernels/projection_gemm/atlas_program.py, *smol_plan, 'atlas-mlir:runtime/smol_policy_raw.c:42-48,233-247']
+    - {match: {op: aten.linear.default, module: vlm_with_expert.vlm.model.vision_model.encoder.layers.*.mlp.fc1}, where: atlas:projection_gemm, bias_where: atlas:smol_fusion, note: one projection call; its bias component runs in the
+      fc1-bias-gelu-fp8 post-pass, cite: [atlas-kernels:kernels/projection_gemm/atlas_program.py, atlas-kernels:kernels/smol_fusion/smol_fusion_fp8.py, *smol_plan, 'merlin:examples/atlas/comparisons/smol_vision_graph.c:89-94']}
+    - {match: {op: [aten.linear.default, aten.conv2d.*]}, where: atlas:projection_gemm, bias_where: host:atlas-mlir/runtime/smol_policy_raw.c, note: bias added on the host in the panel unload except vision fc1, cite: [atlas-kernels:kernels/projection_gemm/atlas_program.py,
+      *smol_plan, 'atlas-mlir:runtime/smol_policy_raw.c:42-48,233-247']}
     # Vision tower.
-    - match: {module: vlm_with_expert.vlm.model.vision_model, source: 'modeling_smolvlm.py:forward:3[789]*'}
-      where: build:atlas-kernels/kernels/attention/atlas_attention_v2_program.py
-      note: all-ones patch mask; vision attention uses mask none
-      cite: ['atlas-kernels:kernels/attention/atlas_attention_v2_program.py:20', *smol_plan]
-    - match: {module: vlm_with_expert.vlm.model.vision_model.embeddings, op: [aten.flatten.*, aten.transpose.*], source: 'modeling_smolvlm.py:forward:136'}
-      where: host:merlin/examples/atlas/comparisons/smol_vision_graph.c
-      note: 16x16 patch im2col (smol_vision_patch16)
-      cite: ['merlin:examples/atlas/comparisons/smol_vision_graph.c:14-24,63']
-    - match: {module: vlm_with_expert.vlm.model.vision_model.embeddings, op: aten.add.Tensor, source: 'modeling_smolvlm.py:forward:162'}
-      where: host:merlin/examples/atlas/comparisons/smol_host_ops.c
-      note: position embedding add
-      cite: ['merlin:examples/atlas/comparisons/smol_vision_graph.c:65', 'merlin:examples/atlas/comparisons/smol_host_ops.c:111']
-    - match: {module: [vlm_with_expert.vlm.model.vision_model.embeddings, vlm_with_expert.vlm.model.vision_model.embeddings.position_embedding]}
-      where: build:merlin/examples/atlas/comparisons/smol_vision_graph.c
-      note: position ids and position embedding rows are the constant parameter p->position
-      cite: ['merlin:examples/atlas/comparisons/smol_vision_graph.c:65']
-    - match: {module: ['vlm_with_expert.vlm.model.vision_model.encoder.layers.*.layer_norm*', vlm_with_expert.vlm.model.vision_model.post_layernorm]}
-      where: host:merlin/examples/atlas/comparisons/smol_vision_ops.c
-      cite: ['merlin:examples/atlas/comparisons/smol_vision_ops.c:34', 'merlin:examples/atlas/comparisons/smol_vision_graph.c:70,88,103']
-    - match: {module: vlm_with_expert.vlm.model.vision_model.encoder.layers.*.self_attn}
-      where: atlas:attention
-      launch: {family: attention, per: {op: aten.scaled_dot_product_attention.default}, mask: none}
-      note: 12 heads, 1024 keys, mask none, BF16 output (24 launches)
-      cite: [atlas-kernels:kernels/attention/atlas_attention_v2_program.py, 'merlin:examples/atlas/comparisons/smol_vision_graph.c:76-81', *smol_plan]
-    - match: {module: vlm_with_expert.vlm.model.vision_model.encoder.layers.*, op: aten.add.Tensor}
-      where: host:merlin/examples/atlas/comparisons/smol_host_ops.c
-      note: residual adds
-      cite: ['merlin:examples/atlas/comparisons/smol_vision_graph.c:83,99', 'merlin:examples/atlas/comparisons/smol_host_ops.c:111']
-    - match: {module: vlm_with_expert.vlm.model.vision_model.encoder.layers.*.mlp.activation_fn}
-      where: atlas:smol_fusion
-      launch: {family: smol_fusion, fuse_into: [vlm_with_expert.vlm.model.vision_model.encoder.layers.*.mlp.fc1], operations: [bias, gelu_tanh], output: fp8}
-      note: fc1 bias and GELU (tanh) fused, FP8 output read by fc2 (192 panels)
-      cite: [atlas-kernels:kernels/smol_fusion/smol_fusion_fp8.py, 'merlin:examples/atlas/comparisons/smol_vision_graph.c:89-94', 'atlas-mlir:runtime/smol_fusion.c:180', *smol_plan]
-    - match: {module: vlm_with_expert.vlm.model.connector}
-      where: host:merlin/examples/atlas/comparisons/smol_vision_graph.c
-      note: 4x pixel shuffle (smol_vision_shuffle4)
-      cite: ['merlin:examples/atlas/comparisons/smol_vision_graph.c:26-38,104']
+    - {match: {module: vlm_with_expert.vlm.model.vision_model, source: 'modeling_smolvlm.py:forward:3[789]*'}, where: build:atlas-kernels/kernels/attention/atlas_attention_v2_program.py, note: all-ones patch mask; vision attention
+      uses mask none, cite: ['atlas-kernels:kernels/attention/atlas_attention_v2_program.py:20', *smol_plan]}
+    - {match: {module: vlm_with_expert.vlm.model.vision_model.embeddings, op: [aten.flatten.*, aten.transpose.*], source: 'modeling_smolvlm.py:forward:136'}, where: host:merlin/examples/atlas/comparisons/smol_vision_graph.c, note: 16x16
+      patch im2col (smol_vision_patch16), cite: ['merlin:examples/atlas/comparisons/smol_vision_graph.c:14-24,63']}
+    - {match: {module: vlm_with_expert.vlm.model.vision_model.embeddings, op: aten.add.Tensor, source: 'modeling_smolvlm.py:forward:162'}, where: host:merlin/examples/atlas/comparisons/smol_host_ops.c, note: position embedding add,
+      cite: ['merlin:examples/atlas/comparisons/smol_vision_graph.c:65', 'merlin:examples/atlas/comparisons/smol_host_ops.c:111']}
+    - {match: {module: [vlm_with_expert.vlm.model.vision_model.embeddings, vlm_with_expert.vlm.model.vision_model.embeddings.position_embedding]}, where: build:merlin/examples/atlas/comparisons/smol_vision_graph.c, note: position ids
+      and position embedding rows are the constant parameter p->position, cite: ['merlin:examples/atlas/comparisons/smol_vision_graph.c:65']}
+    - {match: {module: ['vlm_with_expert.vlm.model.vision_model.encoder.layers.*.layer_norm*', vlm_with_expert.vlm.model.vision_model.post_layernorm]}, where: host:merlin/examples/atlas/comparisons/smol_vision_ops.c, cite: ['merlin:examples/atlas/comparisons/smol_vision_ops.c:34',
+      'merlin:examples/atlas/comparisons/smol_vision_graph.c:70,88,103']}
+    - {match: {module: vlm_with_expert.vlm.model.vision_model.encoder.layers.*.self_attn}, where: atlas:attention, launch: {family: attention, per: {op: aten.scaled_dot_product_attention.default}, mask: none}, note: '12 heads, 1024
+      keys, mask none, BF16 output (24 launches)', cite: [atlas-kernels:kernels/attention/atlas_attention_v2_program.py, 'merlin:examples/atlas/comparisons/smol_vision_graph.c:76-81', *smol_plan]}
+    - {match: {module: vlm_with_expert.vlm.model.vision_model.encoder.layers.*, op: aten.add.Tensor}, where: host:merlin/examples/atlas/comparisons/smol_host_ops.c, note: residual adds, cite: ['merlin:examples/atlas/comparisons/smol_vision_graph.c:83,99',
+      'merlin:examples/atlas/comparisons/smol_host_ops.c:111']}
+    - {match: {module: vlm_with_expert.vlm.model.vision_model.encoder.layers.*.mlp.activation_fn}, where: atlas:smol_fusion, launch: {family: smol_fusion, fuse_into: [vlm_with_expert.vlm.model.vision_model.encoder.layers.*.mlp.fc1],
+      operations: [bias, gelu_tanh], output: fp8}, note: 'fc1 bias and GELU (tanh) fused, FP8 output read by fc2 (192 panels)', cite: [atlas-kernels:kernels/smol_fusion/smol_fusion_fp8.py, 'merlin:examples/atlas/comparisons/smol_vision_graph.c:89-94',
+      'atlas-mlir:runtime/smol_fusion.c:180', *smol_plan]}
+    - {match: {module: vlm_with_expert.vlm.model.connector}, where: host:merlin/examples/atlas/comparisons/smol_vision_graph.c, note: 4x pixel shuffle (smol_vision_shuffle4), cite: ['merlin:examples/atlas/comparisons/smol_vision_graph.c:26-38,104']}
     # Prefix assembly.
-    - match: {module: vlm_with_expert.vlm.model.text_model.embed_tokens}
-      where: build:merlin/examples/atlas/comparisons/smol_policy_graph.c
-      note: language token embedding rows are the constant parameter p->language_embedding
-      cite: ['merlin:examples/atlas/comparisons/smol_policy_graph.c:66-68']
-    - match: {module: '', phase: prefix, op: aten.mul.Tensor, out: [1, 64, 960]}
-      where: host:merlin/examples/atlas/comparisons/smol_vision_graph.c
-      note: image embedding scale by BF16 sqrt(960)
-      cite: ['merlin:examples/atlas/comparisons/smol_vision_graph.c:106-113']
-    - match: {module: '', phase: prefix, source: '', op: [aten.mul.Tensor, aten.cat.default, aten.select.*, aten.to.*, aten.unsqueeze.*], dtype: [bfloat16, float32]}
-      where: host:merlin/examples/atlas/comparisons/smol_policy_graph.c
-      note: language scale and prefix concatenation of images, language, and state
-      cite: ['merlin:examples/atlas/comparisons/smol_policy_graph.c:63-71']
+    - {match: {module: vlm_with_expert.vlm.model.text_model.embed_tokens}, where: build:merlin/examples/atlas/comparisons/smol_policy_graph.c, note: language token embedding rows are the constant parameter p->language_embedding, cite: [
+      'merlin:examples/atlas/comparisons/smol_policy_graph.c:66-68']}
+    - {match: {module: '', phase: prefix, op: aten.mul.Tensor, out: [1, 64, 960]}, where: host:merlin/examples/atlas/comparisons/smol_vision_graph.c, note: image embedding scale by BF16 sqrt(960), cite: ['merlin:examples/atlas/comparisons/smol_vision_graph.c:106-113']}
+    - {match: {module: '', phase: prefix, source: '', op: [aten.mul.Tensor, aten.cat.default, aten.select.*, aten.to.*, aten.unsqueeze.*], dtype: [bfloat16, float32]}, where: host:merlin/examples/atlas/comparisons/smol_policy_graph.c,
+      note: 'language scale and prefix concatenation of images, language, and state', cite: ['merlin:examples/atlas/comparisons/smol_policy_graph.c:63-71']}
     # Text and expert decoder layers.
-    - match: {module: ['vlm_with_expert.vlm.model.text_model.layers.*.*layernorm', 'vlm_with_expert.lm_expert.layers.*.*layernorm', vlm_with_expert.vlm.model.text_model.norm, vlm_with_expert.lm_expert.norm]}
-      where: host:merlin/examples/atlas/comparisons/smol_host_ops.c
-      note: RMSNorm
-      cite: ['merlin:examples/atlas/comparisons/smol_host_ops.c:145,161', 'merlin:examples/atlas/comparisons/smol_policy_block.c:58-60,110', 'merlin:examples/atlas/comparisons/smol_policy_graph.c:84,133']
-    - match: {module: ['vlm_with_expert.vlm.model.text_model.layers.*.mlp*', 'vlm_with_expert.lm_expert.layers.*.mlp*']}
-      where: host:merlin/examples/atlas/comparisons/smol_host_ops.c
-      note: SiLU(gate) x up
-      cite: ['merlin:examples/atlas/comparisons/smol_host_ops.c:133', 'merlin:examples/atlas/comparisons/smol_policy_block.c:113']
-    - match: {module: '', source: 'smolvlm_with_expert.py:forward:4[78]*', op: [aten.add_.Tensor, aten.clone.default]}
-      where: host:merlin/examples/atlas/comparisons/smol_host_ops.c
-      note: residual adds
-      cite: ['merlin:examples/atlas/comparisons/smol_host_ops.c:111,122', 'merlin:examples/atlas/comparisons/smol_policy_block.c:107-109,115']
-    - match: {module: '', source: 'smolvlm_with_expert.py:forward:470'}
-      where: host:merlin/examples/atlas/comparisons/smol_policy_block.c
-      note: BF16 to FP32 view of the prefix cache for cross-attention k and v
-      cite: ['merlin:examples/atlas/comparisons/smol_policy_block.c:64-67']
+    - {match: {module: ['vlm_with_expert.vlm.model.text_model.layers.*.*layernorm', 'vlm_with_expert.lm_expert.layers.*.*layernorm', vlm_with_expert.vlm.model.text_model.norm, vlm_with_expert.lm_expert.norm]}, where: host:merlin/examples/atlas/comparisons/smol_host_ops.c,
+      note: RMSNorm, cite: ['merlin:examples/atlas/comparisons/smol_host_ops.c:145,161', 'merlin:examples/atlas/comparisons/smol_policy_block.c:58-60,110', 'merlin:examples/atlas/comparisons/smol_policy_graph.c:84,133']}
+    - {match: {module: ['vlm_with_expert.vlm.model.text_model.layers.*.mlp*', 'vlm_with_expert.lm_expert.layers.*.mlp*']}, where: host:merlin/examples/atlas/comparisons/smol_host_ops.c, note: SiLU(gate) x up, cite: ['merlin:examples/atlas/comparisons/smol_host_ops.c:133',
+      'merlin:examples/atlas/comparisons/smol_policy_block.c:113']}
+    - {match: {module: '', source: 'smolvlm_with_expert.py:forward:4[78]*', op: [aten.add_.Tensor, aten.clone.default]}, where: host:merlin/examples/atlas/comparisons/smol_host_ops.c, note: residual adds, cite: ['merlin:examples/atlas/comparisons/smol_host_ops.c:111,122',
+      'merlin:examples/atlas/comparisons/smol_policy_block.c:107-109,115']}
+    - {match: {module: '', source: 'smolvlm_with_expert.py:forward:470'}, where: host:merlin/examples/atlas/comparisons/smol_policy_block.c, note: BF16 to FP32 view of the prefix cache for cross-attention k and v, cite: ['merlin:examples/atlas/comparisons/smol_policy_block.c:64-67']}
     # forward_attn_layer (one source line per layer kind): rope tables, rope, cache joins, and attention.
-    - match: {module: '', source: 'smolvlm_with_expert.py:forward:4[34]*', op: aten.to.*, out: [1, '*', [720, 960]]}
-      where: host:merlin/examples/atlas/comparisons/smol_policy_block.c
-      note: layer input cast to BF16 before the q, k, and v projections
-      cite: ['merlin:examples/atlas/comparisons/smol_policy_block.c:58-60']
-    - match: {module: '', source: 'smolvlm_with_expert.py:forward:444', op: aten.view.*, out: [1, 177, 320]}
-      where: host:merlin/examples/atlas/comparisons/smol_policy_block.c
-      note: prefix cache as the cross-attention k and v projection input
-      cite: ['merlin:examples/atlas/comparisons/smol_policy_block.c:64-67']
-    - match: {module: '', source: 'smolvlm_with_expert.py:forward:4[34]*', op: aten.slice.*, dtype: bool}
-      where: host:merlin/examples/atlas/comparisons/smol_policy_graph.c
-      note: cross-attention mask taken from the first 177 keys of the self mask
-      cite: ['merlin:examples/atlas/comparisons/smol_policy_graph.c:103-106']
-    - match: {module: '', source: 'smolvlm_with_expert.py:forward:4[34]*', op: [aten.arange.*, aten.pow.Scalar, aten.div.Tensor, aten.sin.*, aten.cos.*]}
-      where: build:merlin/examples/atlas/comparisons/smol_policy_block.c
-      note: RoPE cos and sin tables are constant parameters (p->cosine, p->sine)
-      cite: ['merlin:examples/atlas/comparisons/smol_policy_block.c:61-62,83']
-    - match: {module: '', source: 'smolvlm_with_expert.py:forward:4[34]*', out: ['*', '*', '*', 32]}
-      where: host:merlin/examples/atlas/comparisons/smol_host_rope.c
-      note: rotate-half RoPE on q (15 heads) and k (5 heads)
-      cite: ['merlin:examples/atlas/comparisons/smol_host_rope.c:4', 'merlin:examples/atlas/comparisons/smol_policy_block.c:61-62,83']
-    - match: {module: '', source: 'smolvlm_with_expert.py:forward:4[34]*', out: [[32], [1, 32], [1, 1, 32], ['*', '*', 1], ['*', '*', 32], ['*', '*', 1, 32]]}
-      where: build:merlin/examples/atlas/comparisons/smol_policy_block.c
-      note: RoPE angle table construction
-      cite: ['merlin:examples/atlas/comparisons/smol_policy_block.c:61-62,83']
-    - match: {module: '', source: 'smolvlm_with_expert.py:forward:4[34]*', op: [aten.to.*, aten.split.*, aten.empty_like.*], out: ['*', '*', '*', 64]}
-      where: host:merlin/examples/atlas/comparisons/smol_host_rope.c
-      note: RoPE input and output casts
-      cite: ['merlin:examples/atlas/comparisons/smol_host_rope.c:4']
-    - match: {module: '', source: 'smolvlm_with_expert.py:forward:444', op: [aten.min.*, aten.sub.Tensor], dtype: int64}
-      where: host:merlin/examples/atlas/comparisons/smol_policy_graph.c
-      note: cross-attention positions relative to the first suffix row
-      cite: ['merlin:examples/atlas/comparisons/smol_policy_graph.c:103-106']
-    - match: {module: '', source: 'smolvlm_with_expert.py:forward:4[34]*', op: [aten.view.*, aten.cat.*], out: [1, '*', '*', 64]}
-      where: host:merlin/examples/atlas/comparisons/smol_policy_block.c
-      note: head split and prefix-plus-suffix KV join
-      cite: ['merlin:examples/atlas/comparisons/smol_policy_block.c:84-93']
-    - match: {module: '', source: 'smolvlm_with_expert.py:forward:4[34]*'}
-      where: atlas:attention
-      launch: {family: attention, per: {op: aten.softmax.int}, kv_heads: 5, mask: arbitrary, masks: {177x177: prefix_state_block, default: all_visible}}
-      note: prefix 177x177 15/5 and expert 50x{227,177} 15/5, arbitrary mask, BF16 output (176 launches)
-      cite: [atlas-kernels:kernels/attention/atlas_attention_v2_program.py, 'merlin:examples/atlas/comparisons/smol_policy_block.c:71-80,94-104', 'atlas-mlir:runtime/smol_policy_raw.c:315,387', *smol_plan]
+    - {match: {module: '', source: 'smolvlm_with_expert.py:forward:4[34]*', op: aten.to.*, out: [1, '*', [720, 960]]}, where: host:merlin/examples/atlas/comparisons/smol_policy_block.c, note: 'layer input cast to BF16 before the q,
+      k, and v projections', cite: ['merlin:examples/atlas/comparisons/smol_policy_block.c:58-60']}
+    - {match: {module: '', source: 'smolvlm_with_expert.py:forward:444', op: aten.view.*, out: [1, 177, 320]}, where: host:merlin/examples/atlas/comparisons/smol_policy_block.c, note: prefix cache as the cross-attention k and v projection
+      input, cite: ['merlin:examples/atlas/comparisons/smol_policy_block.c:64-67']}
+    - {match: {module: '', source: 'smolvlm_with_expert.py:forward:4[34]*', op: aten.slice.*, dtype: bool}, where: host:merlin/examples/atlas/comparisons/smol_policy_graph.c, note: cross-attention mask taken from the first 177 keys
+      of the self mask, cite: ['merlin:examples/atlas/comparisons/smol_policy_graph.c:103-106']}
+    - {match: {module: '', source: 'smolvlm_with_expert.py:forward:4[34]*', op: [aten.arange.*, aten.pow.Scalar, aten.div.Tensor, aten.sin.*, aten.cos.*]}, where: build:merlin/examples/atlas/comparisons/smol_policy_block.c, note: 'RoPE
+      cos and sin tables are constant parameters (p->cosine, p->sine)', cite: ['merlin:examples/atlas/comparisons/smol_policy_block.c:61-62,83']}
+    - {match: {module: '', source: 'smolvlm_with_expert.py:forward:4[34]*', out: ['*', '*', '*', 32]}, where: host:merlin/examples/atlas/comparisons/smol_host_rope.c, note: rotate-half RoPE on q (15 heads) and k (5 heads), cite: ['merlin:examples/atlas/comparisons/smol_host_rope.c:4',
+      'merlin:examples/atlas/comparisons/smol_policy_block.c:61-62,83']}
+    - {match: {module: '', source: 'smolvlm_with_expert.py:forward:4[34]*', out: [[32], [1, 32], [1, 1, 32], ['*', '*', 1], ['*', '*', 32], ['*', '*', 1, 32]]}, where: build:merlin/examples/atlas/comparisons/smol_policy_block.c, note: RoPE
+      angle table construction, cite: ['merlin:examples/atlas/comparisons/smol_policy_block.c:61-62,83']}
+    - {match: {module: '', source: 'smolvlm_with_expert.py:forward:4[34]*', op: [aten.to.*, aten.split.*, aten.empty_like.*], out: ['*', '*', '*', 64]}, where: host:merlin/examples/atlas/comparisons/smol_host_rope.c, note: RoPE input
+      and output casts, cite: ['merlin:examples/atlas/comparisons/smol_host_rope.c:4']}
+    - {match: {module: '', source: 'smolvlm_with_expert.py:forward:444', op: [aten.min.*, aten.sub.Tensor], dtype: int64}, where: host:merlin/examples/atlas/comparisons/smol_policy_graph.c, note: cross-attention positions relative
+      to the first suffix row, cite: ['merlin:examples/atlas/comparisons/smol_policy_graph.c:103-106']}
+    - {match: {module: '', source: 'smolvlm_with_expert.py:forward:4[34]*', op: [aten.view.*, aten.cat.*], out: [1, '*', '*', 64]}, where: host:merlin/examples/atlas/comparisons/smol_policy_block.c, note: head split and prefix-plus-suffix
+      KV join, cite: ['merlin:examples/atlas/comparisons/smol_policy_block.c:84-93']}
+    - {match: {module: '', source: 'smolvlm_with_expert.py:forward:4[34]*'}, where: atlas:attention, launch: {family: attention, per: {op: aten.softmax.int}, kv_heads: 5, mask: arbitrary, masks: {177x177: prefix_state_block, default: all_visible}},
+      note: 'prefix 177x177 15/5 and expert 50x{227,177} 15/5, arbitrary mask, BF16 output (176 launches)', cite: [atlas-kernels:kernels/attention/atlas_attention_v2_program.py, 'merlin:examples/atlas/comparisons/smol_policy_block.c:71-80,94-104',
+      'atlas-mlir:runtime/smol_policy_raw.c:315,387', *smol_plan]}
     # Denoising step glue.
-    - match: {module: '', phase: denoise, source: '', op: [aten.linspace.*, aten.pow.*, aten.reciprocal.*, aten.sin.*, aten.cos.*, aten.to.*, aten.expand_as.*], dtype: [float64, float32]}
-      where: build:merlin/examples/atlas/comparisons/smol_policy_graph.c
-      note: sinusoidal time embedding is the constant parameter p->time_embedding per step
-      cite: ['merlin:examples/atlas/comparisons/smol_policy_graph.c:109']
-    - match: {module: '', phase: denoise, source: '', op: [aten.mul.Tensor, aten.unsqueeze.*, aten.cat.default], dtype: float64}
-      where: build:merlin/examples/atlas/comparisons/smol_policy_graph.c
-      note: sinusoidal time embedding
-      cite: ['merlin:examples/atlas/comparisons/smol_policy_graph.c:109']
-    - match: {module: '', phase: denoise, source: '', op: [aten.unsqueeze.*, aten.mul.Tensor], out: [1, 1], dtype: float32}
-      where: build:merlin/examples/atlas/comparisons/smol_policy_graph.c
-      note: sinusoidal time embedding
-      cite: ['merlin:examples/atlas/comparisons/smol_policy_graph.c:109']
-    - match: {module: '', phase: denoise, source: '', op: aten.cat.default, out: [1, 50, 1440]}
-      where: host:merlin/examples/atlas/comparisons/smol_policy_graph.c
-      note: action and time concatenation
-      cite: ['merlin:examples/atlas/comparisons/smol_policy_graph.c:110-114']
-    - match: {module: '', phase: denoise, source: '', op: aten.silu.*}
-      where: host:merlin/examples/atlas/comparisons/smol_policy_ops.c
-      note: time MLP SiLU
-      cite: ['merlin:examples/atlas/comparisons/smol_policy_ops.c:48', 'merlin:examples/atlas/comparisons/smol_policy_graph.c:117']
-    - match: {module: '', phase: denoise, source: '', op: [aten.mul.Tensor, aten.add.Tensor], out: [1, 50, 32]}
-      where: host:merlin/examples/atlas/comparisons/smol_host_ops.c
-      note: Euler update x + dt v
-      cite: ['merlin:examples/atlas/comparisons/smol_host_ops.c:100', 'merlin:examples/atlas/comparisons/smol_policy_graph.c:139']
-    - match: {module: '', phase: denoise, source: '', op: [aten.slice.*, aten.to.*, aten.cat.default], out: [1, 50, 720]}
-      where: host:merlin/examples/atlas/comparisons/smol_policy_graph.c
-      note: expert output view and FP32 conversion before action_out_proj
-      cite: ['merlin:examples/atlas/comparisons/smol_policy_graph.c:134-138']
-    - match: {module: '', phase: [prefix, denoise], source: ''}
-      where: host:merlin/examples/atlas/comparisons/smol_host_controls.c
-      note: pad, attention, and position controls; suffix masks
-      cite: ['merlin:examples/atlas/comparisons/smol_host_controls.c:10,33', 'merlin:examples/atlas/comparisons/smol_policy_graph.c:60,100']
+    - {match: {module: '', phase: denoise, source: '', op: [aten.linspace.*, aten.pow.*, aten.reciprocal.*, aten.sin.*, aten.cos.*, aten.to.*, aten.expand_as.*], dtype: [float64, float32]}, where: build:merlin/examples/atlas/comparisons/smol_policy_graph.c,
+      note: sinusoidal time embedding is the constant parameter p->time_embedding per step, cite: ['merlin:examples/atlas/comparisons/smol_policy_graph.c:109']}
+    - {match: {module: '', phase: denoise, source: '', op: [aten.mul.Tensor, aten.unsqueeze.*, aten.cat.default], dtype: float64}, where: build:merlin/examples/atlas/comparisons/smol_policy_graph.c, note: sinusoidal time embedding,
+      cite: ['merlin:examples/atlas/comparisons/smol_policy_graph.c:109']}
+    - {match: {module: '', phase: denoise, source: '', op: [aten.unsqueeze.*, aten.mul.Tensor], out: [1, 1], dtype: float32}, where: build:merlin/examples/atlas/comparisons/smol_policy_graph.c, note: sinusoidal time embedding, cite: [
+      'merlin:examples/atlas/comparisons/smol_policy_graph.c:109']}
+    - {match: {module: '', phase: denoise, source: '', op: aten.cat.default, out: [1, 50, 1440]}, where: host:merlin/examples/atlas/comparisons/smol_policy_graph.c, note: action and time concatenation, cite: ['merlin:examples/atlas/comparisons/smol_policy_graph.c:110-114']}
+    - {match: {module: '', phase: denoise, source: '', op: aten.silu.*}, where: host:merlin/examples/atlas/comparisons/smol_policy_ops.c, note: time MLP SiLU, cite: ['merlin:examples/atlas/comparisons/smol_policy_ops.c:48', 'merlin:examples/atlas/comparisons/smol_policy_graph.c:117']}
+    - {match: {module: '', phase: denoise, source: '', op: [aten.mul.Tensor, aten.add.Tensor], out: [1, 50, 32]}, where: host:merlin/examples/atlas/comparisons/smol_host_ops.c, note: Euler update x + dt v, cite: ['merlin:examples/atlas/comparisons/smol_host_ops.c:100',
+      'merlin:examples/atlas/comparisons/smol_policy_graph.c:139']}
+    - {match: {module: '', phase: denoise, source: '', op: [aten.slice.*, aten.to.*, aten.cat.default], out: [1, 50, 720]}, where: host:merlin/examples/atlas/comparisons/smol_policy_graph.c, note: expert output view and FP32 conversion
+      before action_out_proj, cite: ['merlin:examples/atlas/comparisons/smol_policy_graph.c:134-138']}
+    - {match: {module: '', phase: [prefix, denoise], source: ''}, where: host:merlin/examples/atlas/comparisons/smol_host_controls.c, note: 'pad, attention, and position controls; suffix masks', cite: ['merlin:examples/atlas/comparisons/smol_host_controls.c:10,33',
+      'merlin:examples/atlas/comparisons/smol_policy_graph.c:60,100']}

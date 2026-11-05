@@ -6,9 +6,7 @@ family: rne_add
 summary: "BF16 add rounded to nearest even (host FP32 add then BF16 RNE) from truncating VPU arithmetic, 34 instructions"
 stage: "epilogue stage (Step \"add_rne\") and rope post-pass building block"
 entry_points:
-  - module: atlas_rne_add
-    function: rne_add
-    parameters: "a, b, result, sign=4, *, constants=True"
+  - {module: atlas_rne_add, function: rne_add, parameters: "a, b, result, sign=4, *, constants=True"}
 ops: [aten.add.Tensor (bf16 residual)]
 dtypes:
   inputs: bf16
@@ -16,13 +14,9 @@ dtypes:
 constraints:
   registers: "even pairs disjoint from m6..m30, m48, m50, and constants m32..m46"
 select:
-  - op: aten.add.Tensor
-    dtype: bf16
-    shape: projection output tile
-    variant: "epilogue Step(\"add_rne\")"
+  - {op: aten.add.Tensor, dtype: bf16, shape: projection output tile, variant: "epilogue Step(\"add_rne\")"}
 models:
-  - model: tinyllama
-    use: prefill residual adds after o_proj and down_proj; final add of the RoPE post-pass
+  - {model: tinyllama, use: prefill residual adds after o_proj and down_proj; final add of the RoPE post-pass}
 generator: "make gen-rne_add ARGS=\"[--registers a,b,result,sign]\""
 tests: [../../lib/tests/test_kernel_manifests.py, ../../lib/tests/test_kernel_bench.py, ../../coverage/tests/test_bench_model.py]
 checks: [no standalone numeric test yet; every TinyLlama launch using it executed on npu_model 47b8599 numerics=rtl]
