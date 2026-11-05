@@ -170,6 +170,16 @@ def stage_wide(config, q, k, v, mask_tiles=None):
     return bytes(arena), offsets
 
 
+def query_key_counts(config):
+    """Static visible key-tile bounds for ordinary none/causal query blocks."""
+    c = config
+    if c.mask == "none":
+        return (c.key_tiles,) * c.query_tiles
+    start = c.keys - c.query_rows if c.query_start is None else c.query_start
+    return tuple(min(c.key_tiles, max(0, start + min((tile + 1) * 32, c.query_rows) + 31) // 32)
+                 for tile in range(c.query_tiles))
+
+
 def assembly_wide(config, offsets, *, dram_base=0x90000000):
     """One KV-head staging pass, followed by all its query heads and blocks."""
     c = config
@@ -261,7 +271,18 @@ def assembly_wide(config, offsets, *, dram_base=0x90000000):
         *head_dma("x2", "x4", "ch1"), "query_loop:", "dma.wait ch1")
     emit("li x28, 1", "beq x14, x28, query_no_prefetch", "nop",
         f"li x28, {c.query_heads * head_bytes}", "add x27, x4, x28", *head_dma("x3", "x27", "ch1"),
-        "query_no_prefetch:", "lw x18, 0(x17)", "delay 4")
+        "query_no_prefetch:")
+    # Runtime metadata must not bound resident-VMEM iteration. Both supported
+    # mask geometries determine the bound statically; x14 is the concrete number
+    # of query blocks remaining. Keep the descriptor skip/mask behavior below.
+    counts = query_key_counts(c)
+    emit(f"li x18, {counts[-1]}")
+    for tile, count in enumerate(counts[:-1]):
+        if count == counts[-1]:
+            continue
+        emit(f"li x28, {c.query_tiles - tile}", f"bne x14, x28, query_count_next_{tile}", "nop",
+             f"li x18, {count}", "jal x0, query_count_ready", "nop", f"query_count_next_{tile}:")
+    emit("query_count_ready:")
     op("vli.all m4, 65408")
     emit("li x6, 0x20000")
     key_start("scores_loop")
@@ -357,5 +378,5 @@ def assembly_wide(config, offsets, *, dram_base=0x90000000):
         "add x20, x20, x28", "addi x16, x16, -1", "bne x16, x0, head_loop", "nop",
         f"li x28, {head_bytes}", "add x21, x21, x28", "add x22, x22, x28", "addi x15, x15, -1",
         "beq x15, x0, finished", "nop", "jal x0, kv_loop", "nop", "finished:",
-        "dma.wait ch0", "dma.wait ch1", "delay 128", "ecall")
+        "dma.wait ch0", "dma.wait ch1", "delay 128", "nop", "ecall")
     return check_program_v2("\n".join(lines) + "\n")

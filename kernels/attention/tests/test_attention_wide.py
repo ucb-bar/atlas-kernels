@@ -8,11 +8,26 @@ sys.path.insert(0, str(Path(__file__).absolute().parents[3]))
 import atlas_kernels_path  # noqa: E402,F401
 import numpy as np
 from atlas_attention_wide_program import (
-    AttentionWideConfig, assembly_wide, pack_output_wide, stage_wide, unpack_output_wide,
+    AttentionWideConfig, assembly_wide, pack_output_wide, stage_wide, unpack_output_wide, query_key_counts,
 )
 
 
 class WideAttentionLayoutTests(unittest.TestCase):
+    def test_key_loop_bounds_come_from_static_geometry(self):
+        import struct
+        for rows, keys, start, mask in ((32, 32, 0, 'causal'), (1, 33, 32, 'causal'),
+                                       (1, 34, 33, 'causal'), (65, 65, 0, 'causal'),
+                                       (33, 65, 7, 'causal'), (33, 65, 0, 'none')):
+            c = AttentionWideConfig(rows, keys, 12, 2, mask=mask, query_start=start)
+            words = [np.zeros(shape, dtype=np.uint16) for shape in
+                     ((12, rows, 128), (2, keys, 128), (2, keys, 128))]
+            arena, offsets = stage_wide(c, *words)
+            counts = struct.unpack_from('<' + 'I' * c.query_tiles, arena, offsets['key_counts'])
+            self.assertEqual(query_key_counts(c), counts)
+            source = assembly_wide(c, offsets)
+            self.assertNotIn('lw x18, 0(x17)', source)
+            self.assertIn(f'li x18, {counts[-1]}', source)
+
     def test_output_layout_roundtrip_with_row_padding_and_gqa(self):
         for dim in (128, 256):
             for fp8 in (False, True):
@@ -64,6 +79,33 @@ class WideAttentionExecutionTests(unittest.TestCase):
         arena, offsets = stage_wide(c, q, k, v)
         expected = np.repeat(bench.encode_fp8(v_values) if fp8 else v, 2, axis=0)
         return c, arena, offsets, assembly_wide(c, offsets), pack_output_wide(c, expected)
+
+    @unittest.skipUnless(os.environ.get('ATLAS_MLIR_BIN'), 'requires explicit Atlas compiler tools')
+    def test_qwen_d128_passes_verified_compiler_and_assembler_crosscheck(self):
+        import tempfile
+        sys.path.insert(0, str(Path(__file__).absolute().parents[3] / 'coverage'))
+        import bench_model
+        p = dict(rows=32, keys=32, heads=12, kv_heads=2, head_dim=128, mask='causal',
+                 query_start=0, output_fp8=False)
+        entry = dict(family='attention', params=p, key=bench_model.launch_key('attention', p))
+        with tempfile.TemporaryDirectory() as temporary:
+            built = bench_model.build(entry, Path(temporary), os.environ['ATLAS_NPU_MODEL_ROOT'])
+            result = bench_model.program_identity(built, Path(os.environ['ATLAS_MLIR_BIN']), 'verified')
+        self.assertEqual(result['backend']['tier'], 'verified')
+        self.assertTrue(result['backend']['words_equal_assembler'])
+        self.assertTrue(built.source.endswith('delay 128\nnop\necall\n'))
+
+    def test_runtime_count_metadata_cannot_expand_resident_loop(self):
+        import struct
+        import kernel_bench as bench
+        c, arena, offsets, source, expected = self.single_key_case(128)
+        altered = bytearray(arena)
+        struct.pack_into('<I', altered, offsets['key_counts'], 0xffffffff)
+        result = self.executor.execute(source, bytes(altered), offsets['output'], offsets['output_bytes'])
+        cycles, timed = bench.timed_cycles(os.environ['ATLAS_NPU_MODEL_ROOT'], source, bytes(altered), 1_000_000)
+        self.assertGreater(cycles, 0)
+        self.assertEqual(result.output, expected)
+        self.assertEqual(timed[offsets['output']:offsets['output'] + offsets['output_bytes']], expected)
 
     def test_single_visible_key_is_exact_v_for_both_widths_and_outputs(self):
         for dim in (128, 256):
