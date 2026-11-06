@@ -4,6 +4,8 @@ The op and shape inventory comes from each real PyTorch model through `torch.exp
 
 ## Files
 
+The [roofline after opt-in variants](ROOFLINE-AFTER.md) records full-launch before/after device-cycle totals, speed-of-light fractions, remaining family headroom, selection scope, and reproduction limits beside the model benches.
+
 | File | Role |
 | --- | --- |
 | `export_ops.py` | Runs `torch.export.export(strict=False)` on one complete inference and writes `fixture/<model>.json` (aggregated op rows with module path, source line, phase, shapes, dtypes, FLOPs, bias component FLOPs, counts, and the ordered projection and attention call indices) and, under the ignored `out/`, the full node list and graph text. A new model can supply `--loader FILE`. |
