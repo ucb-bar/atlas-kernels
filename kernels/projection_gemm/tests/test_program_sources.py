@@ -1,11 +1,14 @@
 """Receipt source resolution follows the library layout and the imported helper."""
 
 from hashlib import sha256
+import importlib.util
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[3]
@@ -16,6 +19,56 @@ import run_model_tile  # noqa: E402
 
 
 class ProgramSources(unittest.TestCase):
+    def test_canonical_module_ignores_incidental_sibling_helpers(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            for name, path in atlas_program.source_paths(traffic_reuse=True).items():
+                shutil.copyfile(path, directory / name)
+            original_module_path = atlas_program.module_path
+
+            def module_path(name):
+                return directory / name if name == "atlas_program.py" else original_module_path(name)
+
+            with patch.object(atlas_program, "__file__", str(directory / "atlas_program.py")), \
+                    patch.object(atlas_program, "module_path", module_path):
+                paths = atlas_program.source_paths(traffic_reuse=True)
+                self.assertEqual(paths["atlas_program_checks.py"], original_module_path("atlas_program_checks.py"))
+                self.assertEqual(paths["run_model_tile.py"], Path(run_model_tile.__file__))
+
+    def test_complete_flat_bundle_hashes_its_copied_sources(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            for name, path in atlas_program.source_paths(traffic_reuse=True).items():
+                shutil.copyfile(path, directory / name)
+            spec = importlib.util.spec_from_file_location("copied_atlas_program", directory / "atlas_program.py")
+            copied = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(copied)
+            for reuse in (False, True):
+                paths = copied.source_paths(traffic_reuse=reuse)
+                self.assertTrue(all(path.parent == directory for path in paths.values()))
+                self.assertEqual(copied.code_sources(traffic_reuse=reuse),
+                                 {name: sha256(path.read_bytes()).hexdigest() for name, path in paths.items()})
+            before = copied.code_sources(traffic_reuse=True)
+            # Every bundled source, including the host helper, remains local
+            # even though its module may already be imported from the library.
+            for name in before:
+                with self.subTest(source=name):
+                    path = directory / name
+                    original = path.read_bytes()
+                    path.write_bytes(original + b"\n# copied source mutation\n")
+                    after = copied.code_sources(traffic_reuse=True)
+                    self.assertEqual({key for key in before if before[key] != after[key]}, {name})
+                    path.write_bytes(original)
+            for name in ("atlas_program_checks.py", "atlas_program_reuse_blocked.py"):
+                path = directory / name
+                original = path.read_bytes()
+                path.unlink()
+                for function in (copied.code_sources, copied.source_paths):
+                    with self.subTest(missing=name, function=function.__name__):
+                        with self.assertRaisesRegex(FileNotFoundError, "incomplete flat source bundle"):
+                            function(traffic_reuse=True)
+                path.write_bytes(original)
+
     def test_paths_and_hashes_include_shared_helpers_and_all_recipes(self):
         base = atlas_program.source_paths()
         self.assertEqual(len(base), 9)

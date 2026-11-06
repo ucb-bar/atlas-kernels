@@ -180,19 +180,31 @@ def preflight_bundle(args):
         validate_archive_members(archive.infolist())
 
 
-def source_paths(*, traffic_reuse=False):
-    """Receipt source names mapped to library files and the imported host helper."""
-    names = ("atlas_program.py", "atlas_program_checks.py", "atlas_epilogue.py", "atlas_rne_add.py", "atlas_resnet_input.py",
-             "atlas_program_reuse_common.py", "run_model_tile.py", "atlas_tile_arithmetic.py", "atlas_weight_source.py")
-    if _reuse_enabled(traffic_reuse):
-        names += tuple(module + ".py" for module in dict.fromkeys(_TRAFFIC_REUSE_MODULES.values()))
-    return {name: Path(run_model_tile.__file__) if name == "run_model_tile.py" else module_path(name)
-            for name in names}
+def _source_paths(names):
+    if Path(__file__).resolve() == module_path("atlas_program.py").resolve():
+        return {name: Path(run_model_tile.__file__) if name == "run_model_tile.py" else module_path(name)
+                for name in names}
+    # Archived receipts can carry a complete flat source bundle. Hash that
+    # bundle's bytes when this module is loaded from it, including its helper.
+    siblings = {name: Path(__file__).with_name(name) for name in names}
+    missing = ", ".join(name for name, path in siblings.items() if not path.is_file())
+    if missing:
+        raise FileNotFoundError("incomplete flat source bundle: " + missing)
+    return siblings
 
 
 def code_sources(*, traffic_reuse=False):
     """Receipt source names mapped to SHA-256 digests of the files in use."""
-    return {name: sha256(path) for name, path in source_paths(traffic_reuse=traffic_reuse).items()}
+    names = ("atlas_program.py", "atlas_program_checks.py", "atlas_epilogue.py", "atlas_rne_add.py", "atlas_resnet_input.py",
+             "atlas_program_reuse_common.py", "run_model_tile.py", "atlas_tile_arithmetic.py", "atlas_weight_source.py")
+    if _reuse_enabled(traffic_reuse):
+        names += tuple(module + ".py" for module in dict.fromkeys(_TRAFFIC_REUSE_MODULES.values()))
+    return {name: sha256(path) for name, path in _source_paths(names).items()}
+
+
+def source_paths(*, traffic_reuse=False):
+    """Receipt paths for the same admitted source inventory as code_sources."""
+    return _source_paths(code_sources(traffic_reuse=traffic_reuse))
 
 
 def legacy_epilogue_assembly(m, k, n, output_offset, rescale_exponent, *, epilogue=None, direct_input=None, weight_source=None):
