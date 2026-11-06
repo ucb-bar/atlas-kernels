@@ -4,7 +4,7 @@ The op and shape inventory comes from each real PyTorch model through `torch.exp
 
 ## Files
 
-The [roofline after opt-in variants](ROOFLINE-AFTER.md) records full-launch before/after device-cycle totals, speed-of-light fractions, remaining family headroom, selection scope, and reproduction limits beside the model benches.
+The [roofline after opt-in variants](ROOFLINE-AFTER.md) records full-launch before/after device-cycle totals, speed-of-light fractions, remaining family headroom, selection scope, and reproduction limits beside the model benches. The [Qwen launch roofline](ROOFLINE-QWEN.md) adds isolated count-weighted estimates for a random-weight inventory, and the [initial ResNet50 roofline](ROOFLINE-RESNET50.md) records the existing default kit for a model that is no longer a focus.
 
 The focus-model benches retain compact tables, full-precision summaries, and authenticated artifact manifests. [Evidence recovery](EVIDENCE.md) explains `make evidence`, which recovers the full generated JSON from pinned historical Git objects into ignored `out/evidence/` and regenerates reports without simulations. `make bench-model` runs new measurements with explicit dependencies.
 
