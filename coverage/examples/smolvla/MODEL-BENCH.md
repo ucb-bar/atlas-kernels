@@ -1,6 +1,6 @@
 # smolvla kernel bench at model shapes
 
-Regenerate: `See fresh_retry_provenance for original and retry commands and environment overrides.`
+Regenerate: `make bench-model MODEL=smolvla OUT=out/bench/smolvla NPU_MODEL=... MODEL_PYTHON=... ATLAS_MLIR_BIN=... WORKERS=4`
 
 Input: `coverage/coverage.json` (SHA-256 `4abb075f1683e18d7e1591b408feaab8ac55652db0dc3a81282c3de56b6c17a5`), coverage status COMPLETE. The coverage derives 28 distinct launches; 28 executed on npu_model `47b8599d8ffbe5ddd96059ffe2b5be2427a410f5` with numerics="rtl" on seeded synthetic inputs at model shapes (8 worker processes; 60,882 job-seconds in all, longest job 10,257 s).
 
@@ -82,8 +82,8 @@ None: every exported op has a placement.
 
 ## Notes
 
-Fresh same-task results only. Original smol_fusion workers failed before numerical execution because the runner exposed an unattached atlas-mlir tools snapshot on PYTHONPATH. The unchanged published driver reran only that family with PYTHONPATH cleared in a separate fresh directory. Original raw report and errors are retained.
+Retained full-shape measurements at atlas-kernels `80c5f27d4bcded9c1ca7618a17ffcdbae2be7a39` and atlas-mlir `b8dca4e65459d24cb74a403569b46e8325c4c489`. Each launch kind has fresh functional and timed execution; no resume or row-subset cycle estimate enters the totals. These are historical results, not measurements of subsequent source changes.
 
-Every cycle total uses a measured full launch. No row-subset estimate, historical reuse, or --resume was used.
+The [artifact manifest](MODEL-BENCH.artifact.json) authenticates the full JSON and this [compact summary](MODEL-BENCH.summary.json). Run `make evidence` to recover the full JSON and regenerate reports under `out/evidence/` without simulations. See the [evidence instructions](../../EVIDENCE.md) for recovery and fresh measurement.
 
-Fully rerun at atlas-kernels `80c5f27d4bcded9c1ca7618a17ffcdbae2be7a39` and atlas-mlir `b8dca4e65459d24cb74a403569b46e8325c4c489`: 56 fresh functional/timed jobs, with no reuse. All 28 launch types have measured full-shape timing. FRESH receipts: `/scratch/reednicolas/atlas-tmp/jobs/K2/FRESH/out/benches/smolvla-completed-fresh/MODEL-BENCH.json` and `/scratch/reednicolas/atlas-tmp/jobs/K2/FRESH/out/results.json`. This report regeneration runs no simulations.
+The original smol_fusion workers failed before numerical execution due to an unrelated tools snapshot on PYTHONPATH. Only that family was rerun in a fresh directory with PYTHONPATH cleared. Original and retry commands, environment overrides, and source hashes remain in the full JSON.

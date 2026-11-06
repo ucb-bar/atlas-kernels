@@ -1,0 +1,21 @@
+{
+  "schema": "atlas_model_bench_artifact_v1",
+  "model": "tinyllama",
+  "artifact": {
+    "bytes": 78662,
+    "sha256": "38808532a1f7ac2324f7c393c1d53b797ea9334f682671545a11fea3d5c47949",
+    "location": "out/evidence/tinyllama/MODEL-BENCH.json"
+  },
+  "git": {
+    "commit": "b860a6d85dfcfae27a1dce3f8b1c5e739d237f4b",
+    "path": "coverage/examples/tinyllama/MODEL-BENCH.json",
+    "blob": "a685af78fc2ebccbdb2dc3bfaae987259c3871bc"
+  },
+  "summary": {
+    "bytes": 25982,
+    "sha256": "482a5d90a23c5ff6e3457d7e30a4c22a558cc5c52ee8dc0c46c67d23689a34a2",
+    "path": "MODEL-BENCH.summary.json"
+  },
+  "recovery": "make evidence",
+  "measurement_scope": "Historical full-shape synthetic npu_model rtl measurements; no fresh execution in artifact migration."
+}

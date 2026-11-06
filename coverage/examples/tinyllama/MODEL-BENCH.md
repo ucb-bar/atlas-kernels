@@ -1,6 +1,6 @@
 # tinyllama kernel bench at model shapes
 
-Regenerate: `python /scratch/reednicolas/atlas-tmp/jobs/K2/FRESH/tmp/sources/atlas-kernels/coverage/bench_model.py --coverage /scratch/reednicolas/atlas-tmp/jobs/K2/FRESH/tmp/sources/atlas-kernels/coverage/coverage.json --model tinyllama --model-root /tmp/reednicolas-atlas/oct31/V2/A/npu-model --atlas-mlir-bin /scratch/reednicolas/atlas-tmp/jobs/K/B/final4/build/bin --out /scratch/reednicolas/atlas-tmp/jobs/K2/FRESH/out/benches/tinyllama --workers 8 --job-timeout 172800 --subset-after 172800 --max-cycles 2000000000 --max-instructions 500000000`
+Regenerate: `make bench-model MODEL=tinyllama OUT=out/bench/tinyllama NPU_MODEL=... MODEL_PYTHON=... ATLAS_MLIR_BIN=... WORKERS=4`
 
 Input: `coverage/coverage.json` (SHA-256 `4abb075f1683e18d7e1591b408feaab8ac55652db0dc3a81282c3de56b6c17a5`), coverage status COMPLETE. The coverage derives 26 distinct launches; 26 executed on npu_model `47b8599d8ffbe5ddd96059ffe2b5be2427a410f5` with numerics="rtl" on seeded synthetic inputs at model shapes (8 worker processes; 69,858 job-seconds in all, longest job 5,472 s).
 
@@ -85,4 +85,6 @@ None: every exported op has a placement.
 
 ## Notes
 
-Fully rerun at atlas-kernels `80c5f27d4bcded9c1ca7618a17ffcdbae2be7a39` and atlas-mlir `b8dca4e65459d24cb74a403569b46e8325c4c489`: 52 fresh functional/timed jobs, with no reuse. All 26 launch types have measured full-shape timing. FRESH receipts: `/scratch/reednicolas/atlas-tmp/jobs/K2/FRESH/out/benches/tinyllama/MODEL-BENCH.json` and `/scratch/reednicolas/atlas-tmp/jobs/K2/FRESH/out/results.json`. This report regeneration runs no simulations.
+Retained full-shape measurements at atlas-kernels `80c5f27d4bcded9c1ca7618a17ffcdbae2be7a39` and atlas-mlir `b8dca4e65459d24cb74a403569b46e8325c4c489`. Each launch kind has fresh functional and timed execution; no resume or row-subset cycle estimate enters the totals. These are historical results, not measurements of subsequent source changes.
+
+The [artifact manifest](MODEL-BENCH.artifact.json) authenticates the full JSON and this [compact summary](MODEL-BENCH.summary.json). Run `make evidence` to recover the full JSON and regenerate reports under `out/evidence/` without simulations. See the [evidence instructions](../../EVIDENCE.md) for recovery and fresh measurement.

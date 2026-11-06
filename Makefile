@@ -22,7 +22,7 @@ ARGS ?=
 ENV := PYTHONDONTWRITEBYTECODE=1 $(if $(NPU_MODEL),PYTHONPATH=$(NPU_MODEL) ATLAS_NPU_MODEL_ROOT=$(NPU_MODEL))
 
 WORKERS ?= 24
-.PHONY: test test-lib test-coverage test-cites test-bench-model test-families bench-model coverage $(addprefix test-,$(FAMILIES)) $(addprefix gen-,$(GENERATORS))
+.PHONY: test test-lib test-coverage test-cites test-bench-model test-families bench-model evidence coverage $(addprefix test-,$(FAMILIES)) $(addprefix gen-,$(GENERATORS))
 test: $(addprefix test-,$(FAMILIES)) test-lib test-coverage test-cites
 
 # Opt-in representative execution checks for all nine family make interfaces.
@@ -41,6 +41,10 @@ $(addprefix gen-,$(GENERATORS)): gen-%:
 
 coverage:
 	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) coverage/build_table.py
+
+# Recover authenticated historical JSON and regenerate tables without simulations.
+evidence:
+	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) coverage/evidence.py $(if $(OUT),--out "$(OUT)")
 
 test-coverage:
 	$(ENV) $(PYTHON) -m unittest discover -s coverage/tests -t coverage/tests -v

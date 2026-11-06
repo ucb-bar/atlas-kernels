@@ -6,6 +6,8 @@ The op and shape inventory comes from each real PyTorch model through `torch.exp
 
 The [roofline after opt-in variants](ROOFLINE-AFTER.md) records full-launch before/after device-cycle totals, speed-of-light fractions, remaining family headroom, selection scope, and reproduction limits beside the model benches.
 
+The focus-model benches retain compact tables, full-precision summaries, and authenticated artifact manifests. [Evidence recovery](EVIDENCE.md) explains `make evidence`, which recovers the full generated JSON from pinned historical Git objects into ignored `out/evidence/` and regenerates reports without simulations. `make bench-model` runs new measurements with explicit dependencies.
+
 | File | Role |
 | --- | --- |
 | `export_ops.py` | Runs `torch.export.export(strict=False)` on one complete inference and writes `fixture/<model>.json` (aggregated op rows with module path, source line, phase, shapes, dtypes, FLOPs, bias component FLOPs, counts, and the ordered projection and attention call indices) and, under the ignored `out/`, the full node list and graph text. A new model can supply `--loader FILE`. |
