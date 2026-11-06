@@ -12,7 +12,7 @@ import numpy as np  # noqa: E402
 from atlas_attention_v2_program import AttentionV2Config, assembly_v2, stage_v2  # noqa: E402
 
 args = parser(__doc__)
-args.add_argument("--variant", choices=("v2", "v2-no-halt-delay", "vision-fast"), default="v2",
+args.add_argument("--variant", choices=("v2", "v2-no-halt-delay", "vision-fast", "synchronous-dma"), default="v2",
                   help="explicit generator selection; v2 preserves existing kit programs")
 args.add_argument("--rows", type=int, required=True, help="query rows (1 for decode)")
 args.add_argument("--keys", type=int, required=True)
@@ -30,6 +30,8 @@ if args.variant == "v2-no-halt-delay" and args.head_dim != 64:
     raise SystemExit("v2-no-halt-delay requires --head-dim 64")
 if args.variant == "vision-fast" and args.head_dim != 64:
     raise SystemExit("vision-fast requires --head-dim 64")
+if args.variant == "synchronous-dma" and args.head_dim != 64:
+    raise SystemExit("synchronous-dma requires --head-dim 64")
 if args.variant == "v2-no-halt-delay":
     from atlas_attention_v2_halt import assembly_v2
 elif args.variant == "vision-fast":
@@ -65,5 +67,10 @@ if args.head_dim == 64:
     metadata_config.pop("head_dim")
 wide_suffix = "" if args.head_dim == 64 else f"-d{args.head_dim}"
 variant_suffix = "-vision-fast" if args.variant == "vision-fast" else ""
+source = assembly_attention(config, offsets)
+if args.variant == "synchronous-dma":
+    from atlas_attention_sync import synchronous_dma
+    source = synchronous_dma(source)
+    variant_suffix = "-synchronous-dma"
 write(args, f"attention-{args.rows}x{args.keys}-{query_heads}h{kv_heads}{'' if mask == 'none' else '-' + mask}{'-fp8' if args.fp8 else ''}{wide_suffix}{variant_suffix}",
-      assembly_attention(config, offsets), dict(family="attention", config=metadata_config, offsets=offsets, arena_bytes=len(arena)))
+      source, dict(family="attention", config=metadata_config, offsets=offsets, arena_bytes=len(arena)))

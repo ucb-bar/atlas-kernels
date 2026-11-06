@@ -497,6 +497,41 @@ class RunTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'only for projection_gemm'):
             bench_model.build(dict(family='rmsnorm'), Path('.'), MODEL_ROOT, projection_operands=(a, w))
 
+    def test_supplied_attention_operands_preserve_reference_and_reject_invalid_boundaries(self):
+        import numpy as np
+        sys.path.insert(0, str(COVERAGE.parent))
+        import atlas_kernels_path  # noqa: F401
+        import kernel_bench as bench
+        from atlas_execution import Executor
+        p = dict(rows=2, keys=3, heads=2, kv_heads=1, head_dim=64, mask='none', output_fp8=False)
+        entry = dict(family='attention', key='captured-attention', params=p)
+        q = np.linspace(-0.5, 0.5, 256, dtype=np.float32).reshape(2, 2, 64)
+        k = np.linspace(-0.25, 0.25, 192, dtype=np.float32).reshape(1, 3, 64)
+        v = np.linspace(0.0, 1.0, 192, dtype=np.float32).reshape(1, 3, 64)
+        with tempfile.TemporaryDirectory() as temporary:
+            built = bench_model.build(entry, Path(temporary), MODEL_ROOT, attention_operands=(q, k, v))
+        rounded = [bench.bf16_values(bench.bf16_words(x)) for x in (q, k, v)]
+        expected = bench.load_reference('attention').reference(*rounded, np.ones((2, 3), dtype=bool))
+        np.testing.assert_array_equal(built.reference, expected)
+        result = Executor(MODEL_ROOT).execute(built.source, built.arena, built.output_offset, built.output_bytes)
+        self.assertGreater(bench.fidelity(built.decode(result.output), expected)['cosine'], 0.99)
+        self.assertIsNone(built.golden)
+        mask = np.array([[True, False, False], [True, True, False]], dtype=bool)
+        with tempfile.TemporaryDirectory() as temporary:
+            masked = bench_model.build(dict(entry, params=dict(p, mask='arbitrary')), Path(temporary), MODEL_ROOT,
+                                       attention_operands=(q, k, v), attention_mask_values=mask)
+        np.testing.assert_array_equal(masked.reference, bench.load_reference('attention').reference(*rounded, mask))
+        self.assertFalse(np.array_equal(masked.reference, built.reference))
+        for invalid in (mask.astype(np.float32), mask[:1], np.zeros_like(mask)):
+            with self.assertRaisesRegex(ValueError, 'attention mask'):
+                bench_model.build_attention(dict(p, mask='arbitrary'), None, None, Path('.'),
+                                            operands=(q, k, v), mask_values=invalid)
+        for operands in ((q[:1], k, v), (q, k.astype(np.float64), v), (q, k), (q, k, v * np.nan)):
+            with self.subTest(length=len(operands)), self.assertRaisesRegex(ValueError, 'operand'):
+                bench_model.build_attention(p, None, None, Path('.'), operands=operands)
+        with self.assertRaisesRegex(ValueError, 'only for attention'):
+            bench_model.build(dict(family='projection_gemm'), Path('.'), MODEL_ROOT, attention_operands=(q, k, v))
+
     def test_resume_regenerates_identity_and_reruns_stale_words(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'coverage.json'

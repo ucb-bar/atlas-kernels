@@ -524,7 +524,7 @@ def attention_mask(p):
     return mask
 
 
-def build_attention(p, rng, gen, work):
+def build_attention(p, rng, gen, work, *, operands=None, mask_values=None):
     import numpy as np
     import kernel_bench as bench
     from atlas_attention_v2_program import AttentionV2Config, stage_v2, unpack_output_v2
@@ -538,16 +538,32 @@ def build_attention(p, rng, gen, work):
     else:
         raise NoVariant(f"attention requires head dimension 64, 128, or 256; this launch has {dim}")
     rows, keys, heads, kv_heads = p['rows'], p['keys'], p['heads'], p['kv_heads']
-    words = [bench.bf16_words(rng.standard_normal(shape, dtype=np.float32))
-             for shape in ((heads, rows, dim), (kv_heads, keys, dim), (kv_heads, keys, dim))]
+    shapes = ((heads, rows, dim), (kv_heads, keys, dim), (kv_heads, keys, dim))
+    if operands is None:
+        values = [rng.standard_normal(shape, dtype=np.float32) for shape in shapes]
+    else:
+        if not isinstance(operands, (tuple, list)) or len(operands) != 3:
+            raise ValueError('attention_operands requires a (Q, K, V) triple of physical float32 arrays')
+        values = [np.asarray(value) for value in operands]
+        for name, value, shape in zip(('Q', 'K', 'V'), values, shapes):
+            if value.shape != shape or value.dtype != np.float32 or not np.isfinite(value).all():
+                raise ValueError(f'attention operand {name} must be finite float32 with physical shape {shape}')
+    words = [bench.bf16_words(value) for value in values]
     q, k, v = (bench.bf16_values(x) for x in words)
-    mask = attention_mask(p)
+    if mask_values is None:
+        mask = attention_mask(p)
+    else:
+        mask = np.asarray(mask_values)
+        if p['mask'] != 'arbitrary' or mask.dtype != np.bool_ or mask.shape != (rows, keys) or not mask.any(axis=1).all():
+            raise ValueError('attention mask must be boolean [rows,keys], with visible keys in each row, for arbitrary masking')
     expected = reference.reference(q, k, v, mask, scale=dim ** -0.5)
     exponents = dict(q_exponent=bench.fp8_scale(q), k_exponent=bench.fp8_scale(k), v_exponent=bench.fp8_scale(v))
     o_exponent = bench.fp8_scale(expected) if p['output_fp8'] else 0
     arguments = ['--rows', str(rows), '--keys', str(keys), '--heads', f'{heads}/{kv_heads}', '--mask', p['mask'],
                  '--q-exponent', str(exponents['q_exponent']), '--k-exponent', str(exponents['k_exponent']),
                  '--v-exponent', str(exponents['v_exponent']), '--o-exponent', str(o_exponent)]
+    if p.get('variant'):
+        arguments += ['--variant', p['variant']]
     if dim != 64:
         arguments += ['--head-dim', str(dim)]
     if p['mask'] == 'causal':
@@ -569,6 +585,8 @@ def build_attention(p, rng, gen, work):
         value = unpack(config, raw)
         return bench.fp8_values(value, o_exponent) if p['output_fp8'] else bench.bf16_values(value)
     variant = ('attention v2' if dim == 64 else f'attention wide d{dim}') + (' packed decode' if config.decode_packed else '') + f", {offsets['unique_masks']} unique mask tiles"
+    if p.get('variant'):
+        variant += '; ' + p['variant']
     return Built(source, arena, offsets['output'], offsets['output_bytes'], expected, decode, None, variant, record,
                  dict(**exponents, o_exponent=o_exponent))
 
@@ -608,7 +626,7 @@ BUILDERS = {'projection_gemm': build_projection_gemm, 'epilogue': build_epilogue
             'rope': build_rope, 'rmsnorm': build_rmsnorm, 'attention': build_attention, 'smol_fusion': build_smol_fusion}
 
 
-def build(entry, work, model_root, *, projection_operands=None):
+def build(entry, work, model_root, *, projection_operands=None, attention_operands=None, attention_mask_values=None):
     """Stage a launch; supplied projection operands use physical float32 [M,K] and [K,N] arrays."""
     import numpy as np
     family = entry['family']
@@ -616,6 +634,8 @@ def build(entry, work, model_root, *, projection_operands=None):
         raise NoVariant(f'no model-shape bench builder for family {family}')
     if projection_operands is not None and family != 'projection_gemm':
         raise ValueError('projection_operands is supported only for projection_gemm launches')
+    if (attention_operands is not None or attention_mask_values is not None) and family != 'attention':
+        raise ValueError('attention_operands and attention_mask_values are supported only for attention launches')
     p = entry['params']
     # Deliberate capability exclusions happen before generation. Never infer unsupported shapes from
     # a generator's exit code or exception text, which can also describe broken implementations.
@@ -630,7 +650,7 @@ def build(entry, work, model_root, *, projection_operands=None):
     rng = np.random.default_rng(seed(entry['key']))
     gen = lambda fam, arguments: generator(fam, arguments, work, model_root)  # noqa: E731
     if family == 'attention':
-        return build_attention(entry['params'], rng, gen, work)
+        return build_attention(entry['params'], rng, gen, work, operands=attention_operands, mask_values=attention_mask_values)
     built = (build_projection_gemm(entry['params'], rng, gen, operands=projection_operands)
              if family == 'projection_gemm' else BUILDERS[family](entry['params'], rng, gen))
     if family in GOLDEN_FAMILIES:
