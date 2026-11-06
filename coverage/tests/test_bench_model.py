@@ -163,6 +163,20 @@ class PlanTest(unittest.TestCase):
                 dict(key='c', status='no-variant'), dict(key='d', status='ok', bit_exact=True, timed_output_equal=True)]
         self.assertEqual(bench_model.failures(rows), ['a: independent golden mismatch', 'b: timed/functional mismatch'])
 
+    def test_generator_crashes_are_errors(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            script = root / 'kernels' / 'projection_gemm' / 'gen.py'
+            script.parent.mkdir(parents=True)
+            for failure in ('raise NameError("broken schedule")',
+                            'import missing_atlas_generator_dependency',
+                            'raise ValueError("broken schedule")',
+                            'raise SystemExit(2)'):
+                with self.subTest(failure=failure):
+                    script.write_text(failure + '\n')
+                    with mock.patch.object(bench_model, 'ROOT', root), self.assertRaises(RuntimeError):
+                        bench_model.generator('projection_gemm', ['--shape', '32x32x64'], root, root)
+
     def test_subset_compiler_error_is_a_launch_failure(self):
         entry = dict(key='attention:toy', family='attention', count=2,
                      params=dict(rows=256, keys=32, heads=1, kv_heads=1, head_dim=64,
@@ -349,6 +363,30 @@ class PlanTest(unittest.TestCase):
 
 @unittest.skipUnless(CAN_RUN, 'needs NumPy, PyTorch, and npu_model (ATLAS_NPU_MODEL_ROOT)')
 class RunTest(unittest.TestCase):
+    def test_registered_projection_recipe_is_required(self):
+        import numpy as np
+        sys.path.insert(0, str(COVERAGE.parent))
+        import atlas_kernels_path  # noqa: F401
+        params = dict(m=128, k=2048, n=2048, rows=1, logical_k=2048, logical_n=2048)
+        generator = mock.Mock(side_effect=RuntimeError('registered recipe crashed'))
+        with self.assertRaisesRegex(RuntimeError, 'registered recipe crashed'):
+            bench_model.build_projection_gemm(params, np.random.default_rng(0), generator)
+        self.assertEqual(generator.call_count, 1)
+        self.assertIn('--traffic-reuse', generator.call_args.args[1])
+
+    def test_generator_failure_fails_report_admission(self):
+        entry, = [item for item in bench_model.plan(toy_model()['models']['toy'])[0]
+                  if item['family'] == 'projection_gemm']
+        with tempfile.TemporaryDirectory() as temporary, \
+                mock.patch.object(bench_model, 'generator', side_effect=RuntimeError('NameError: broken schedule')):
+            results = {entry['key']: {
+                mode: bench_model.run_job(entry, mode, Path(MODEL_ROOT), Path(temporary), 100, 100)
+                for mode in ('functional', 'timed')}}
+        row, = bench_model.merge([entry], results)
+        self.assertEqual(row['status'], 'error')
+        self.assertIn('NameError: broken schedule', row['error'])
+        self.assertTrue(bench_model.failures([row]))
+
     def test_rmsnorm1536_qwen_epsilon_functional_and_timed_agree(self):
         import numpy as np
         sys.path.insert(0, str(COVERAGE.parent))

@@ -5,8 +5,8 @@ and the mapping rules' launch hints become distinct device launches: projection 
 fused family's program), attention launches, and RMSNorm launches, each with its count in the model. For each
 distinct launch the script
 
-- generates the program with the family's kernels/<family>/gen.py (a subprocess; a shape the generator rejects is
-  reported as no-variant with the generator's error),
+- checks known shape limits, reporting unsupported shapes as no-variant, then generates the program with the
+  family's kernels/<family>/gen.py (a subprocess whose failures are reported as errors),
 - when --atlas-mlir-bin is explicit, translates the program to machine IR through lib/atlas_backend.py, runs
   atlas-opt's stream and timing verifiers, and requires atlas-emit's words to equal npu_model's assembler words
   at --min-tier (default stream-verified),
@@ -54,7 +54,7 @@ SLOW_SECONDS = 1200  # the 20-minute threshold the report flags
 
 
 class NoVariant(Exception):
-    """The family generator rejected this shape."""
+    """A deliberate capability check excludes this shape or staging policy."""
 
 
 # ----------------------------------------------------------------------------------------------- launch plan
@@ -309,7 +309,7 @@ def seed(key):
 
 
 def generator(family, arguments, work, model_root):
-    """Run kernels/<family>/gen.py; return its source and record, or raise NoVariant with its error."""
+    """Run kernels/<family>/gen.py; unexpected failures must fail the benchmark."""
     out = Path(tempfile.mkdtemp(prefix=f'{family}-', dir=work))
     environment = dict(os.environ, PYTHONDONTWRITEBYTECODE='1', PYTHONPATH=str(model_root), ATLAS_NPU_MODEL_ROOT=str(model_root))
     command = [sys.executable, '-B', str(ROOT / 'kernels' / family / 'gen.py'), '--out', str(out), '--name', 'program', *arguments]
@@ -317,7 +317,7 @@ def generator(family, arguments, work, model_root):
     text = f"kernels/{family}/gen.py {' '.join(shlex.quote(a) for a in arguments)}"
     if process.returncode:
         lines = [line for line in process.stderr.strip().splitlines() if line.strip()]
-        raise NoVariant(f"{text}: {lines[-1] if lines else f'exit {process.returncode}'}")
+        raise RuntimeError(f"{text}: {lines[-1] if lines else f'exit {process.returncode}'}")
     record = json.loads((out / 'program.json').read_text())
     return (out / 'program.S').read_text(), dict(record, command=text)
 
@@ -372,14 +372,11 @@ def build_projection_gemm(p, rng, gen, *, operands=None):
     from atlas_vector_arithmetic import ordered_matmul, rescale_bf16_array
     reference = bench.load_reference('projection_gemm')
     projection = Projection(p, rng, operands=operands)
-    try:
+    if recipe(p['m'], p['k'], p['n']) is not None:
         source, record = gen('projection_gemm', ['--shape', projection.shape, '--rescale-exponent', str(projection.scale), '--traffic-reuse'])
         variant = f"{record['recipe'].removeprefix('atlas_program_reuse_')} recipe"
-    except NoVariant as reuse:
-        try:
-            source, record = gen('projection_gemm', ['--shape', projection.shape, '--rescale-exponent', str(projection.scale)])
-        except NoVariant as default:
-            raise NoVariant(f'{reuse}; {default}') from None
+    else:
+        source, record = gen('projection_gemm', ['--shape', projection.shape, '--rescale-exponent', str(projection.scale)])
         variant = 'default schedule (no traffic-reuse recipe for this shape)'
     return projection.finish(bench.relocate(source), record, reference.reference(projection.a, projection.w), variant,
                              golden=lambda a=projection.a_codes, w=projection.w_codes, scale=projection.scale:
@@ -605,6 +602,17 @@ def build(entry, work, model_root, *, projection_operands=None):
         raise NoVariant(f'no model-shape bench builder for family {family}')
     if projection_operands is not None and family != 'projection_gemm':
         raise ValueError('projection_operands is supported only for projection_gemm launches')
+    p = entry['params']
+    # Deliberate capability exclusions happen before generation. Never infer unsupported shapes from
+    # a generator's exit code or exception text, which can also describe broken implementations.
+    if family in ('epilogue', 'rne_add', 'rope', 'smol_fusion') and recipe(p['m'], p['k'], p['n']) is None:
+        raise NoVariant('traffic reuse is supported only for the qualified shapes')
+    if family == 'rmsnorm':
+        from atlas_rmsnorm_tiled import MAX_WIDTH
+        if p['m'] not in (32, 128):
+            raise NoVariant('RMSNorm benchmark physical rows must be 32 or 128')
+        if p['width'] <= 0 or p['width'] % 32 or p['width'] > MAX_WIDTH:
+            raise NoVariant(f'RMSNorm width must be a positive multiple of 32 <= {MAX_WIDTH} (current VMEM layout)')
     rng = np.random.default_rng(seed(entry['key']))
     gen = lambda fam, arguments: generator(fam, arguments, work, model_root)  # noqa: E731
     if family == 'attention':
@@ -757,6 +765,9 @@ def run_job(entry, mode, model_root, work, max_cycles, max_instructions, atlas_m
         built = build(entry, work, model_root)
     except NoVariant as error:
         return dict(result, status='no-variant', error=str(error))
+    except Exception as error:  # noqa: BLE001 - staging and generator bugs are launch failures
+        return dict(result, status='error', error=f'{type(error).__name__}: {error}',
+                    seconds=round(time.perf_counter() - started, 1))
     result.update(variant=built.variant, generator_words=built.generator.get('words'), generator_command=built.generator.get('command'),
                   meta=built.meta)
     try:
