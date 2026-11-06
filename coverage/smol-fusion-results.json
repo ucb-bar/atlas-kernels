@@ -1,0 +1,97 @@
+{
+  "schema": "atlas.smol-fusion-fast.v1",
+  "status": "PASS",
+  "base": "0333da05f4b172b126f7203ec1077a2cd6f5ede7",
+  "family": "smol_fusion",
+  "physical_mkn": [
+    128,
+    768,
+    3072
+  ],
+  "hook": "bias+gelu_tanh:fp8",
+  "programs": 9,
+  "represented_launches": 192,
+  "independently_recomputed_inputs": 9,
+  "timing": {
+    "before": 4956786,
+    "kgemm": 4357746,
+    "after": 3718939,
+    "count": 192,
+    "before_weighted": 951702912,
+    "kgemm_weighted": 836687232,
+    "after_weighted": 714036288,
+    "saved_weighted": 237666624,
+    "incremental_saved_weighted": 122650944,
+    "functional_comparison": "PASS"
+  },
+  "tests": {
+    "status": "PASS",
+    "invocations": 290,
+    "suites": 11,
+    "suite_invocations": [
+      21,
+      4,
+      66,
+      6,
+      6,
+      9,
+      3,
+      3,
+      6,
+      127,
+      39
+    ],
+    "skips": 0,
+    "log_sha256": "c6a6d2da970596073c9034c585ac03ae0a9931d7fb419c5b1f0c48aae8357644"
+  },
+  "compiler": {
+    "candidates": 9,
+    "tier": "verified",
+    "words_equal_assembler": true,
+    "words_per_program": 1442,
+    "original_comparison_tier": "stream-verified"
+  },
+  "numerics": {
+    "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+    "numerics": "rtl",
+    "fresh_candidate_native_acceleration": false,
+    "full_arena_bytes": 3048192,
+    "output_bytes": 393216,
+    "comparisons": 18,
+    "independent_golden_equal": true,
+    "original_receipts": "authenticated reuse"
+  },
+  "identity": {
+    "default_unchanged": true,
+    "source_pins": 55,
+    "census_files": 4,
+    "archived_elf_cmp_pairs": 16,
+    "elf_rebuild": false
+  },
+  "worker_guard": {
+    "samples": 625,
+    "max_load1": 98.28,
+    "max_active_functional": 9,
+    "reserved_other_workers": 3,
+    "max_reserved_total": 12,
+    "high_load_samples": 0
+  },
+  "receipts": {
+    "out/final-audit.json": "356c1257e8f3e4ee3b91944cd5d38f9440670435cdb3fdad6d9010f1a4f5f944",
+    "out/qualification/manifest.json": "38712b966ea2c1e668aff96bb4a18d81f86adfec6c590beba4dd2c4aaebad011",
+    "out/qualification/functional-summary.json": "212fabedfd7bf94d4df2dfabaeadc0565d796939ad8fef067aa45e4ea23b6890",
+    "out/qualification/backend-summary.json": "8228984f871532fcda0cb99e445e033f037c26fe72a7d73412a48adab7ae0220",
+    "out/qualification/reused-old.json": "29f7b65512f89cda88d5ff2cb995f5826915f4744e3e58574764953ecabe7a75",
+    "out/qualification/execution-audit.json": "a58de2f10154a43471a4fcabe02ab4f4177f7df0fa90e21342c1c37a94c6658b",
+    "out/qualification/golden-join.json": "f5c5503c9687adb6705fa3ca108622a4a0239558b276644df5adc335e599a13c",
+    "out/independent-golden.json": "48fc0fc1ec827065191994639ac46bd08518c7f88e62dfc2d057d246e0b9ec26",
+    "out/reused-timing.json": "c03c8505b13a067aa6616bd8cba0fe0da7050ea67b3f6959ca0baef398f96793",
+    "out/timing/smolvla-00-new.json": "177d74156fade4a0d142ea0d9fcb4d6ba0a51bd9d1079fc1cd8fe148c6dac340",
+    "out/test-summary.json": "f15426a3e6f4c74ff6dc26e47bf04123150018a9ef76224d593fc8c809a57770",
+    "out/identity.json": "1897c22f6e203b5edde29ec52eb1777d9bf3284c87e46d8e539a80894d490989",
+    "out/model-identity.json": "8c8ea7c9fdcb31441d5693ed23c0a8e21625be66c5819651186708a8cbf4b611",
+    "out/golden-rtl-derivation.json": "80779c3c8f4385cbbb26eb9ca32fe61fac88d3cc5c8f7abac3003544edf8f58e",
+    "out/qualification/load-guard-selftest/summary.json": "6df7e82f506d5da1cfe698f108c24545479b2fa2df1e33f1dd3825ef647559ee"
+  },
+  "scope": "One captured input per nine distinct sources; representative measured cycles times 192 captured launches; no whole-model or RTL simulator run."
+}

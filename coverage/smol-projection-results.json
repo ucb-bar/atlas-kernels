@@ -1,0 +1,60 @@
+{
+  "schema": "atlas_variant_artifact_v1",
+  "artifact": {
+    "bytes": 28075,
+    "sha256": "a0d73a1f7c5e61afbaf90a9bd348a4f672587d7ff2ab9c0a9cc2937083119fb9",
+    "location": "out/evidence/variants/smol-projection-results.json"
+  },
+  "git": {
+    "commit": "dcad2a317550d3b5a1d057c63ad1e5c2a491c3d9",
+    "path": "coverage/smol-projection-results.json",
+    "blob": "854d5046f77f2d349ac776e2836a3b85caab3f3c"
+  },
+  "summary": {
+    "status": "PASS",
+    "programs": 33,
+    "launches": 1840,
+    "numerical_executions": 66,
+    "compiler_tiers": {
+      "verified": 33
+    },
+    "table": [
+      {"shape": [64, 736, 960], "programs": 1, "count": 160, "original_cycles": 917415, "previous_opt_in_cycles": 917415, "new_cycles": 680175, "saved_per_launch": 237240, "saved_cycles_x_count": 37958400, "gain_percent": 25.859616422229852, "incremental_saved_cycles_x_count": 37958400, "incremental_gain_percent": 25.859616422229852},
+      {"shape": [64, 736, 2048], "programs": 1, "count": 320, "original_cycles": 1916097, "previous_opt_in_cycles": 1724737, "new_cycles": 1409985, "saved_per_launch": 506112, "saved_cycles_x_count": 161955840, "gain_percent": 26.413694087512273, "incremental_saved_cycles_x_count": 100720640, "incremental_gain_percent": 18.249275106871366},
+      {"shape": [64, 960, 736], "programs": 4, "count": 160, "original_cycles": 905046, "previous_opt_in_cycles": 905046, "new_cycles": 666651, "saved_per_launch": 238395, "saved_cycles_x_count": 38143200, "gain_percent": 26.34065008850379, "incremental_saved_cycles_x_count": 38143200, "incremental_gain_percent": 26.34065008850379},
+      {"shape": [64, 960, 2560], "programs": 6, "count": 32, "original_cycles": 3030974, "previous_opt_in_cycles": 3030974, "new_cycles": 2201774, "saved_per_launch": 829200, "saved_cycles_x_count": 26534400, "gain_percent": 27.357542492941214, "incremental_saved_cycles_x_count": 26534400, "incremental_gain_percent": 27.357542492941214},
+      {"shape": [64, 2048, 736], "programs": 2, "count": 160, "original_cycles": 1843626, "previous_opt_in_cycles": 1652266, "new_cycles": 1330726, "saved_per_launch": 512900, "saved_cycles_x_count": 82064000, "gain_percent": 27.820176109471227, "incremental_saved_cycles_x_count": 51446400, "incremental_gain_percent": 19.460546909516992},
+      {"shape": [128, 768, 768], "programs": 6, "count": 784, "original_cycles": 1077912, "previous_opt_in_cycles": 856728, "new_cycles": 774450, "saved_per_launch": 303462, "saved_cycles_x_count": 237914208, "gain_percent": 28.152762006545988, "incremental_saved_cycles_x_count": 64505952, "incremental_gain_percent": 9.603748214135642},
+      {"shape": [128, 960, 2560], "programs": 6, "count": 32, "original_cycles": 4163274, "previous_opt_in_cycles": 4163274, "new_cycles": 2871994, "saved_per_launch": 1291280, "saved_cycles_x_count": 41320960, "gain_percent": 31.015974447033752, "incremental_saved_cycles_x_count": 41320960, "incremental_gain_percent": 31.015974447033752},
+      {"shape": [128, 3072, 768], "programs": 7, "count": 192, "original_cycles": 3848658, "previous_opt_in_cycles": 2963922, "new_cycles": 2612347, "saved_per_launch": 1236311, "saved_cycles_x_count": 237371712, "gain_percent": 32.123171245665375, "incremental_saved_cycles_x_count": 67502400, "incremental_gain_percent": 11.861816876422523}
+    ],
+    "original_target_cycles_x_count": 3013966240,
+    "previous_opt_in_target_cycles_x_count": 2578835872,
+    "new_target_cycles_x_count": 2150703520,
+    "saved_cycles_x_count": 863262720,
+    "incremental_saved_cycles_x_count": 428132352,
+    "gain_percent": 28.642083263679822,
+    "incremental_gain_percent": 16.601768132997336,
+    "original_projection_family_cycles_x_count": 3424717132,
+    "derived_projection_family_cycles_x_count": 2561454412,
+    "original_smolvla_device_cycles": 5160679740,
+    "derived_smolvla_device_cycles": 4297417020,
+    "functional_summary_sha256": "ae33bcc58cc79e5f3edf9682b6d46f329382691537e964aeb4d3f2c50ffea528",
+    "functional_selection_sha256": "230e7015b8926adcae00ca307b405ef70cf77c8f457d13eff9a66dde0172a012",
+    "collection_sha256": "7d6189877b6d5ee3de4a6e97f5bf876bc52c7a4b8988b61a42a78ce6ef94a7b6",
+    "model_byte_authentication_receipt_sha256": "a5c4a27744082e00dd235cea8774a5aa3db46f4628b54a95344e917983c1e259",
+    "validation_scope": {
+      "functional": "Full arenas including padding and guards.",
+      "core_trace": "Output bytes; fixed-latency engines drained.",
+      "rtl": "Output bytes and complete matched-memory request/response trace.",
+      "model_pin": "Full package bytes authenticated after runs against the read-only pinned model. Later traces additionally record in-process bookends."
+    },
+    "totals_scope": "Count-weighted derived device cycles; no whole-model execution, host, or loading time.",
+    "fresh_baseline_report_sha256": "4358e05216c1928d63ece4bd1d1dcb07bb2f31b7b4840e00655bd7f928c5bbf0",
+    "fresh_baseline_json_sha256": "9bc3424f6855ed5b04a1289b824a48c0fb3e3f8a26bee6628a5875aca6dcd52c",
+    "rtl_receipt_sha256": "92b0788ad368e89db32195aa209eca7f0e730d92692e1d5f42a4fa0aef8fdcd4",
+    "manifest_sha256": "e69bce35d6e80920e1aaa8cecaa308dd866897188e1ac566068539baa549eba7",
+    "optimizer_sha256": "eb8da327a9be56d62d0fb823de82c1428ab8650583c4e7955960584ee60d7bbc"
+  },
+  "recovery": "make evidence"
+}

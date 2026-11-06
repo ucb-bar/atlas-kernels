@@ -1,0 +1,17 @@
+# Opt-in streamed SmolVLA fc1 fusion
+
+`smol_fusion_fast.optimize(source, 128, 768, 3072)` selects an exact original vision fc1 bias, GELU(tanh), and FP8 producer. `stage_fc1_fp8_fast()` stages the original arena and replaces only the program. `gen_fusion_fast.py` provides an explicit generator. Complete-template admission preserves the captured rescale, consumer scale, bias layout, poison, and guards, and rejects modified sources, other shapes, other hooks, and repeated transforms. The established 0x90000000 arena relocation is supported.
+
+The variant preloads A in legal 4,096-byte DMA commands and streams each successor B tile while the first row pair transposes and computes the current tile. The second pair consumes the transposed cache. Increasing-K MAC order, BF16 pop and rescale, and the complete original bias, GELU, clipping, and FP8 store hooks remain unchanged. B occupies VMEM bytes [0,24576), output scratch [24576,26624), and A [262144,360448). Requested traffic remains 3,244,032 load bytes and 393,216 store bytes per launch. Every candidate has 1,442 program words.
+
+One representative measured launch falls from 4,956,786 original cycles (4,357,746 paired-GEMM cycles) to 3,718,939 cycles. Across 192 captured launches, the family's original 951,702,912 count-weighted cycles become 714,036,288, saving 237,666,624 (24.97%). Relative to the paired-GEMM after-state of 836,687,232, the incremental saving is 122,650,944 (14.66%). Both gains exceed 5%, so the variant is retained. The cited original SOL bound is 472,813,824 cycles; it describes the original work. These are representative model timings multiplied by counts, with no whole-model timing claim.
+
+All nine distinct captured programs pass candidate execution on unmodified npu_model `47b8599`, `numerics="rtl"`, with native acceleration disabled. Their complete 3,048,192-byte arenas match the authenticated original executions and the independent golden, including all 393,216 FP8 output bytes and guards. Original numerical and original/paired-GEMM timing receipts are reused only after exact source, binary, input, output, and pinned-model joins. Each distinct program runs on one captured input; this does not claim execution of all 192 represented inputs. All nine candidates are compiler tier `verified`, and atlas-emit words equal the assembler. Original comparison programs are `stream-verified`. `make test` passes 290 invocations across 11 suites, with 0 skips, including the explicit citation gate. Raw receipts and interrupted attempts remain in the local job's `out/` directory; the [compact results](../../coverage/smol-fusion-results.json) bind the measured facts and receipt digests. Receipt identifiers are relative to the evidence job root; `out/` denotes its archived evidence directory.
+
+Default generators, the census, all 55 pinned sources, and the 16 archived kit ELFs remain unchanged. Adoption requires explicit variant selection and regeneration of programs, loading metadata, and compiler and execution receipts. Whole-model, host, loading-time, accuracy, new RTL simulation, and ELF rebuild results are not claimed. The independent golden covers finite admitted arithmetic and reconstructs fixed-point tanh knots without importing execution-model arithmetic or tables.
+
+```sh
+python kernels/smol_fusion/gen_fusion_fast.py --shape 128x768x3072 \
+  --rescale-exponent -14 --output-scale-exponent -5 --low-arena \
+  --out build/smol_fusion_fast
+```

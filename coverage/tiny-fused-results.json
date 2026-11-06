@@ -1,0 +1,64 @@
+{
+  "schema": "atlas_variant_artifact_v1",
+  "artifact": {
+    "bytes": 47673,
+    "sha256": "d259085ac9bc7d974dbc659337be7df9c7ba4b21a0cfc1e2a7769a71760f0b81",
+    "location": "out/evidence/variants/tiny-fused-results.json"
+  },
+  "git": {
+    "commit": "dcad2a317550d3b5a1d057c63ad1e5c2a491c3d9",
+    "path": "coverage/tiny-fused-results.json",
+    "blob": "cf13aacbdc22f7c7ff6d51deea88a72a37747fdc"
+  },
+  "summary": {
+    "status": "PASS",
+    "programs": 96,
+    "launches": 396,
+    "table": [
+      {"family": "epilogue", "shape": [32, 2048, 2048], "hook": "mul:fp8", "selected": false, "attempted_cycles": 3448418, "programs": 39, "count": 88, "original_cycles": 3420329, "previous_opt_in_cycles": 3420329, "new_cycles": 3420329, "saved_per_launch": 0, "saved_cycles_x_count": 0, "incremental_saved_cycles_x_count": 0, "gain_percent": 0.0, "incremental_gain_percent": 0.0},
+      {"family": "epilogue", "shape": [32, 2048, 2048], "hook": "silu:bf16", "selected": false, "attempted_cycles": 3404322, "programs": 5, "count": 88, "original_cycles": 3376233, "previous_opt_in_cycles": 3376233, "new_cycles": 3376233, "saved_per_launch": 0, "saved_cycles_x_count": 0, "incremental_saved_cycles_x_count": 0, "gain_percent": 0.0, "incremental_gain_percent": 0.0},
+      {"family": "epilogue", "shape": [128, 2048, 2048], "hook": "mul:fp8", "selected": true, "attempted_cycles": 4788338, "programs": 26, "count": 44, "original_cycles": 6977261, "previous_opt_in_cycles": 5404397, "new_cycles": 4788338, "saved_per_launch": 2188923, "saved_cycles_x_count": 96312612, "incremental_saved_cycles_x_count": 27106596, "gain_percent": 31.37223904910537, "incremental_gain_percent": 11.399218081129124},
+      {"family": "epilogue", "shape": [128, 2048, 2048], "hook": "silu:bf16", "selected": true, "attempted_cycles": 4603122, "programs": 5, "count": 44, "original_cycles": 6792045, "previous_opt_in_cycles": 5219181, "new_cycles": 4603122, "saved_per_launch": 2188923, "saved_cycles_x_count": 96312612, "incremental_saved_cycles_x_count": 27106596, "gain_percent": 32.22774584090653, "incremental_gain_percent": 11.803748519164214},
+      {"family": "rne_add", "shape": [128, 2048, 2048], "hook": "add_rne:bf16", "selected": true, "attempted_cycles": 5590642, "programs": 6, "count": 22, "original_cycles": 7779565, "previous_opt_in_cycles": 6206701, "new_cycles": 5590642, "saved_per_launch": 2188923, "saved_cycles_x_count": 48156306, "incremental_saved_cycles_x_count": 13553298, "gain_percent": 28.136830272643778, "incremental_gain_percent": 9.925707714935841},
+      {"family": "rne_add", "shape": [128, 5632, 1024], "hook": "add_rne:bf16", "selected": true, "attempted_cycles": 6575973, "programs": 9, "count": 44, "original_cycles": 9979346, "previous_opt_in_cycles": 7420776, "new_cycles": 6575973, "saved_per_launch": 3403373, "saved_cycles_x_count": 149748412, "incremental_saved_cycles_x_count": 37171332, "gain_percent": 34.10416875013653, "incremental_gain_percent": 11.384294580512874},
+      {"family": "rope", "shape": [32, 2048, 2048], "hook": "rope", "selected": false, "attempted_cycles": 3536206, "programs": 3, "count": 44, "original_cycles": 3508117, "previous_opt_in_cycles": 3508117, "new_cycles": 3508117, "saved_per_launch": 0, "saved_cycles_x_count": 0, "incremental_saved_cycles_x_count": 0, "gain_percent": 0.0, "incremental_gain_percent": 0.0},
+      {"family": "rope", "shape": [128, 2048, 2048], "hook": "rope", "selected": true, "attempted_cycles": 5129747, "programs": 3, "count": 22, "original_cycles": 7318670, "previous_opt_in_cycles": 5745806, "new_cycles": 5129747, "saved_per_launch": 2188923, "saved_cycles_x_count": 48156306, "incremental_saved_cycles_x_count": 13553298, "gain_percent": 29.908753912937733, "incremental_gain_percent": 10.721890018563105}
+    ],
+    "original_target_cycles_x_count": 2129556462,
+    "previous_opt_in_target_cycles_x_count": 1809361334,
+    "new_target_cycles_x_count": 1690870214,
+    "saved_cycles_x_count": 438686248,
+    "incremental_saved_cycles_x_count": 118491120,
+    "gain_percent": 20.59988809068731,
+    "incremental_gain_percent": 6.5487814829141255,
+    "original_tinyllama_device_cycles": 3537507930,
+    "derived_tinyllama_device_cycles": 3098821682,
+    "tiers": {
+      "verified": 49
+    },
+    "attempted_candidate_tiers": {
+      "verified": 96
+    },
+    "rejected_experimental_tiers": {
+      "verified": 47
+    },
+    "selected_programs": 49,
+    "rejected_programs": 47,
+    "manifest_sha256": "5621470cb032c2762a45f4ed8231308b537f5d26883544327967ed9d727dee67",
+    "optimizer_sha256": "026711a2ea45d3933f6871cbbb9724fa2aacb7678eb3d8af719d8a6d4bca281a",
+    "functional_summary_sha256": "870bcdcd7864667142ad061b893348f21030c4278fdd622e0c65a9d58596959c",
+    "backend_summary_sha256": "19cc1d3cca2e2bec56f4d4b569719c483bba988b20fcf3f86c6c22212feefb28",
+    "test_summary_sha256": "94bca2aac3c6ad23e60483ee2620449d4ffcbe1c9404f26ded65606e80f0dfeb",
+    "resume_test_summary_sha256": "ddfe80b7b7b8a1b03cb478eee27de491c0f11453787b14305a48a5e8befadac8",
+    "scope": "Measured launch savings times captured launch counts, with no whole-model, host, or program-loading run.",
+    "final_audit_sha256": "5098ece6d0b51349a9fe67df91ca0cf4e66f7020075119b91129a135925d4cd6",
+    "validation_scope": {
+      "functional": "Full arenas on captured inputs for all 49 retained distinct programs, plus 47 rejected experimental programs.",
+      "compiler": "96 originals and 96 attempted programs, all verified, with emitted words equal to assembler.",
+      "timing": "Default curve backend, raw ECALL, drained engines and DMA, no native acceleration.",
+      "rtl": "Full captured candidate program and complete DRAM arena confirmed on pinned RTL; baseline RTL remains CANCELLED.",
+      "totals": "Measured launch cycles times captured counts; derived device totals, no whole-model, host, or loading run."
+    }
+  },
+  "recovery": "make evidence"
+}

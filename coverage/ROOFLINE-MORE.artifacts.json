@@ -1,0 +1,91 @@
+{
+  "schema": 1,
+  "scope": "Retained analysis identifiers, not downloadable artifact locations. Full inputs and receipts are not shipped; make evidence does not regenerate these rooflines.",
+  "analyses": {
+    "KPERF-QWEN": {
+      "artifacts": [
+        {
+          "name": "ROOFLINE-QWEN.md",
+          "bytes": 14222,
+          "sha256": "b29b2d94886c9ee3c84cefd4a24224111552d7560c388f8ec062a7c4642b39c1"
+        },
+        {
+          "name": "DONE.md",
+          "bytes": 3202,
+          "sha256": "4fd02567b5abcfdf8ebfa60521c39d634ef73616bf9eaee187e6ef5cbb19675c"
+        },
+        {
+          "name": "out/roofline-qwen.json",
+          "bytes": 660519,
+          "sha256": "8ec9c9b19223fba13a2575081aca54d083acdd0f2666fc3e60b9e062c8120022"
+        },
+        {
+          "name": "out/inventory-derived.json",
+          "bytes": 137531,
+          "sha256": "d0cc2a9f143886d547a881fa7955cc5ec3b7d103b988a09f766b35f2913f9cec"
+        },
+        {
+          "name": "out/selection.json",
+          "bytes": 1663,
+          "sha256": "b56de31179013fa7c15dcca476411bfce5122b5a12214b48d50db9051f9e9c80"
+        },
+        {
+          "name": "out/specs.json",
+          "bytes": 57311,
+          "sha256": "493fb3250c234e70a025dfa34f4776fd77cefa5dad71215dbe6feeb8dce25ce4"
+        },
+        {
+          "name": "out/validation.json",
+          "bytes": 1187,
+          "sha256": "c941089dc7807adb62cd84b3beaae10544061e73dd298d0eaadaac27c996155d"
+        },
+        {
+          "name": "out/roofline-qwen.png",
+          "bytes": 178070,
+          "sha256": "ca406f83fb3aebdfe5e44151364ad1fd62888f734458f956ce30d5f4997695a2"
+        }
+      ],
+      "committed_plot": "roofline-qwen.png"
+    },
+    "KPERF-RESNET": {
+      "artifacts": [
+        {
+          "name": "ROOFLINE-RESNET50.md",
+          "bytes": 6112,
+          "sha256": "d5749ec39c69f4aedf13b68d6a8fa4f165a2073ecc62cd478211d2f69354c182"
+        },
+        {
+          "name": "DONE.md",
+          "bytes": 3759,
+          "sha256": "2642e0fd31fd88cfb211ea399d490f95a61eb0293ed1e3c914385fe0f8d4fa5e"
+        },
+        {
+          "name": "out/roofline-resnet50.json",
+          "bytes": 752088,
+          "sha256": "ab177b735be24b3871cb7ad07705cb3032edcada4af4cac27dddaf989f9324b6"
+        },
+        {
+          "name": "out/inventory.json",
+          "bytes": 245425,
+          "sha256": "ff1acac394b74cf993b9ee1f7c8d91be1cf9cd9ef14e2510888bb1db2fa14adb"
+        },
+        {
+          "name": "out/provenance.json",
+          "bytes": 4696,
+          "sha256": "b0f2b5123766081d6cd0e2ded7f2e7caf5586bad16c0ee8576830e062fbc5b06"
+        },
+        {
+          "name": "out/validation.json",
+          "bytes": 6592,
+          "sha256": "5b3a22ad71bea04093c558100a5e2e3078835beed5a6ef513f9da510c578d60c"
+        },
+        {
+          "name": "out/roofline-resnet50.png",
+          "bytes": 204191,
+          "sha256": "a39b7e17bd5379eaa564db5941770559ea8c7080e17c4ed5a92ffaf6f5f4880e"
+        }
+      ],
+      "committed_plot": "roofline-resnet50.png"
+    }
+  }
+}

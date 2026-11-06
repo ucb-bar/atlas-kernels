@@ -1,0 +1,21 @@
+{
+  "schema": "atlas_model_bench_artifact_v1",
+  "model": "smolvla",
+  "artifact": {
+    "bytes": 89150,
+    "sha256": "9bc3424f6855ed5b04a1289b824a48c0fb3e3f8a26bee6628a5875aca6dcd52c",
+    "location": "out/evidence/smolvla/MODEL-BENCH.json"
+  },
+  "git": {
+    "commit": "b860a6d85dfcfae27a1dce3f8b1c5e739d237f4b",
+    "path": "coverage/examples/smolvla/MODEL-BENCH.json",
+    "blob": "30e1506ab784905f42e0523f4c4d57525264b2a1"
+  },
+  "summary": {
+    "bytes": 28630,
+    "sha256": "8c8d7d0818a3e1d2d10ec0da11afe0c35aca0fd6caaee78acb3b108b8ce39238",
+    "path": "MODEL-BENCH.summary.json"
+  },
+  "recovery": "make evidence",
+  "measurement_scope": "Historical full-shape synthetic npu_model rtl measurements; no fresh execution in artifact migration."
+}

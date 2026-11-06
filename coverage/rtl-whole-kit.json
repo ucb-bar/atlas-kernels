@@ -1,0 +1,147 @@
+{
+  "cycle_delta_by_family": {
+    "ResNet50/bottleneck_conv1x1a": {
+      "0": 10
+    },
+    "ResNet50/bottleneck_conv1x1b": {
+      "0": 11
+    },
+    "ResNet50/bottleneck_conv3x3": {
+      "0": 11
+    },
+    "ResNet50/downsample_conv1x1": {
+      "0": 4
+    },
+    "ResNet50/fast_bottleneck_conv1x1a": {
+      "0": 32
+    },
+    "ResNet50/fast_bottleneck_conv1x1b": {
+      "0": 32
+    },
+    "ResNet50/fast_bottleneck_conv3x3": {
+      "0": 32
+    },
+    "ResNet50/fast_downsample_conv1x1": {
+      "0": 8
+    },
+    "ResNet50/fast_fc": {
+      "0": 2
+    },
+    "ResNet50/fast_maxpool+maxpool": {
+      "0": 1
+    },
+    "ResNet50/fast_stem_conv7x7": {
+      "0": 2
+    },
+    "ResNet50/fc": {
+      "0": 1
+    },
+    "ResNet50/stem_conv7x7": {
+      "0": 1
+    },
+    "SmolVLA/attention": {
+      "0": 20
+    },
+    "SmolVLA/fast_projection": {
+      "0": 437
+    },
+    "SmolVLA/fast_projection/fused": {
+      "0": 13
+    },
+    "SmolVLA/projection": {
+      "0": 87
+    },
+    "TinyLlama/attention": {
+      "0": 25
+    },
+    "TinyLlama/fast_projection/down_plain": {
+      "0": 112
+    },
+    "TinyLlama/fast_projection/gate_silu": {
+      "0": 150
+    },
+    "TinyLlama/fast_projection/k": {
+      "0": 50
+    },
+    "TinyLlama/fast_projection/lm_head": {
+      "0": 32
+    },
+    "TinyLlama/fast_projection/o_plain": {
+      "0": 51
+    },
+    "TinyLlama/fast_projection/q": {
+      "0": 50
+    },
+    "TinyLlama/fast_projection/up_mul_fp8": {
+      "0": 180
+    },
+    "TinyLlama/fast_projection/v": {
+      "0": 50
+    },
+    "TinyLlama/norm": {
+      "0": 10
+    },
+    "TinyLlama/projection/down_plain": {
+      "0": 19
+    },
+    "TinyLlama/projection/gate_silu": {
+      "0": 20
+    },
+    "TinyLlama/projection/k": {
+      "0": 7
+    },
+    "TinyLlama/projection/lm_head": {
+      "0": 6
+    },
+    "TinyLlama/projection/o_plain": {
+      "0": 14
+    },
+    "TinyLlama/projection/q": {
+      "0": 6
+    },
+    "TinyLlama/projection/up_mul_fp8": {
+      "0": 93
+    },
+    "TinyLlama/projection/v": {
+      "0": 10
+    }
+  },
+  "cycle_delta_definition": "RTL - (Core - 1)",
+  "initial_state_seed": 42,
+  "instruction_count_exact": 1589,
+  "model_revision": "47b8599d8ffbe5ddd96059ffe2b5be2427a410f5",
+  "numerics": "rtl",
+  "output_bytes": 364589056,
+  "rtl_revision": "0079c0541111197741a231c002e3843fa6f545b2",
+  "simulator_qualification_cases": 18,
+  "simulator_sha256": [
+    "8d1039ab9083f939183e71ae998b3e1b8159019b4fe8d4b5dadd2a2581729407",
+    "da6bad930f786128f34894d11807827ae5f3c5cf4bed2e4c32e34c5ad41f3eb2",
+    "dd4866a5c9975d66cdc9e0c57db26cb0466a6c443fcf029decd610f6cbe07691"
+  ],
+  "source_results_sha256": "f85de02b32aaeba2eeed134323d4383383261116e2f0dc39a6d019dcdd3f440b",
+  "summary": {
+    "ResNet50": {
+      "exact": 147,
+      "mismatched": 0,
+      "pending": 0,
+      "programs": 147
+    },
+    "SmolVLA": {
+      "exact": 557,
+      "mismatched": 0,
+      "pending": 0,
+      "programs": 557
+    },
+    "TinyLlama": {
+      "exact": 885,
+      "mismatched": 0,
+      "pending": 0,
+      "programs": 885
+    }
+  },
+  "synthetic_exact": 50,
+  "synthetic_model_family_groups": 36,
+  "synthetic_runs": 50,
+  "verilator_version": "5.022"
+}

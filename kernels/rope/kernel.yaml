@@ -1,0 +1,56 @@
+# atlas-kernels manifest for kernels/rope/ (schema atlas.kernel.v1).
+# select rules use the fields of Merlin radiance kernel_library/selection.yaml: op, dtype, and shape
+# constraints choose this family and, for projection_gemm, the variant (generator module) to emit.
+schema: atlas.kernel.v1
+family: rope
+summary: "rotate-half rotary embedding RNE(RNE(x*cos) + RNE(r*sin)) over retained or explicitly staged BF16 q and k"
+stage: producer post-pass, or opt-in standalone BF16 launch
+entry_points:
+  - module: atlas_rope_postpass
+    function: ResidentRopeEpilogue
+    parameters: "Epilogue fields plus cos_offset, sin_offset, neg_sin_offset, head_dimension=64"
+  - module: atlas_rope_postpass
+    function: append_postpass
+    parameters: "source, epilogue"
+  - module: atlas_rope_standalone
+    function: layout
+    parameters: "physical M, N, optional aligned low32 dram_base"
+  - module: atlas_rope_standalone
+    function: assembly
+    parameters: "physical M, N, optional aligned low32 dram_base"
+  - module: atlas_rope_standalone
+    function: prepare
+    parameters: "M, N, packed BF16 H/cos/sin/negsin, logical_rows, dram_base"
+ops: ["apply_rotary_pos_emb (aten.mul, aten.cat, aten.neg, aten.add)"]
+dtypes:
+  input: bf16
+  tables: "bf16 cos, sin, and -sin tiles"
+  output: bf16
+constraints:
+  head_dimension: 64
+  rows: "producer M 32 or 128; standalone positive physical M multiple of 32"
+  standalone_width: "positive N multiple of 64, head_dimension 64"
+  standalone_h_bytes: "2*M*N <= 524288, VMEM banks 2/3"
+  standalone_coefficient_bytes: "192*M <= 262144, VMEM bank 4"
+  standalone_coefficients: "finite BF16 in [-1,1], negative_sine equals sine XOR 0x8000"
+  standalone_tails: "signed-zero H; cosine 1 and signed-zero sine; exact negsin relation"
+  standalone_arena: "H offset 0; 256-byte guard; output offset 2*M*N+256; guard; three 64*M-byte tables; final guard"
+  standalone_rescale: 0
+select:
+  - op: apply_rotary_pos_emb
+    dtype: bf16
+    shape: "q (N 2048) or k (N 256), head_dim 64"
+    variant: ResidentRopeEpilogue on the producing projection
+  - op: apply_rotary_pos_emb
+    dtype: bf16
+    shape: "physical MxN with M multiple of 32, N multiple of 64, admitted resident extents"
+    variant: "atlas_rope_standalone.assembly; explicit BF16 coefficient contract"
+models:
+  - model: tinyllama
+    use: prefill and decode q and k
+    shapes: [128x2048x2048, 128x2048x256, 32x2048x2048, 32x2048x256]
+generator: "make gen-rope ARGS=\"--shape MxKxN\""
+standalone_generator: "make gen-rope ARGS=\"--postpass-shape MxN\""
+tests: [tests/test_rope_standalone.py, ../../lib/tests/test_kernel_manifests.py, ../../lib/tests/test_kernel_bench.py, ../../coverage/tests/test_bench_model.py]
+checks: [standalone original47 independent RNE oracle and full arenas; every TinyLlama RoPE launch executed on npu_model 47b8599 numerics=rtl]
+run_tests: "make test-rope test-lib test-projection_gemm test-coverage NPU_MODEL=<npu_model 47b8599 checkout>"

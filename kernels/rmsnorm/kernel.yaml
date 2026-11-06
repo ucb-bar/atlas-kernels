@@ -1,0 +1,30 @@
+# atlas-kernels manifest for kernels/rmsnorm/ (schema atlas.kernel.v1).
+# select rules use the fields of Merlin radiance kernel_library/selection.yaml: op, dtype, and shape
+# constraints choose this family and, for projection_gemm, the variant (generator module) to emit.
+schema: atlas.kernel.v1
+family: rmsnorm
+summary: "RMSNorm (and LayerNorm) over retained BF16 rows, gamma-scaled, FP8 E4M3 output for the next projection"
+stage: post-pass; TinyLlama runs it as a standalone launch that DMAs h into VMEM banks 2 and 3
+entry_points:
+  - {module: atlas_rmsnorm_tiled, function: standalone_source, parameters: "rows, width, mask_offset, weight_offset, scale=-8, eps=1e-5; streamed tile rows for new widths or nondefault epsilon"}
+  - {module: atlas_norm_postpass, function: ResidentNormEpilogue, parameters: "Epilogue fields plus norm_kind, real_n, norm_mask_offset, norm_weight_offset, norm_bias_offset, norm_scale_exponent"}
+  - {module: atlas_norm_postpass, function: postpass, parameters: epilogue}
+  - {module: atlas_rmsnorm_postpass, function: ResidentRMSNormEpilogue, parameters: original 128x2048 prototype}
+ops: ["LlamaRMSNorm (aten.pow, aten.mean, aten.rsqrt, aten.mul)"]
+dtypes:
+  input: bf16
+  gamma: bf16
+  output: fp8_e4m3
+constraints:
+  width: "positive multiples of 32 through 7136; pinned resident path for 960 and 2048; streamed standalone path otherwise"
+  logical_width: "must equal physical width; no padded-width divisor or real_n on the streamed path"
+  eps: "default 1e-5; --eps or eps= opts into a positive epsilon that rounds FP32 to finite normal BF16, including 1e-6"
+  rows: 128 (prefill) or 32 (one decode row padded)
+select:
+  - {op: LlamaRMSNorm, dtype: "bf16 -> fp8_e4m3", shape: "rows in {1 (padded to 32), 128}, logical width = physical width in 32..7136 by 32, positive epsilon rounded FP32 to finite normal BF16", variant: "gen.py selects the pinned resident path for widths 960 and 2048 at eps=1e-5; otherwise streamed standalone"}
+models:
+  - {model: tinyllama, use: "input_layernorm and post_attention_layernorm, 132 launches in the default build", shapes: [128x2048, 32x2048]}
+generator: "make gen-rmsnorm ARGS=\"--rows 128|32 --width WIDTH\""
+tests: [tests/test_norm_postpass.py, tests/test_rmsnorm_tiled.py]
+checks: [register hygiene test, every TinyLlama norm launch executed on npu_model 47b8599 numerics=rtl in atlas-mlir export]
+run_tests: "make test-rmsnorm NPU_MODEL=<npu_model 47b8599 checkout>"

@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+# Generated programs, receipts, and model outputs are regenerated, never committed.
+build/
+out/
+# Full benchmark receipts are artifacts; retain their compact summaries and manifests.
+MODEL-BENCH.json

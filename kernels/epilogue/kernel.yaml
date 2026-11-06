@@ -1,0 +1,69 @@
+# atlas-kernels manifest for kernels/epilogue/ (schema atlas.kernel.v1).
+# select rules use the fields of Merlin radiance kernel_library/selection.yaml: op, dtype, and shape
+# constraints choose this family and, for projection_gemm, the variant (generator module) to emit.
+schema: atlas.kernel.v1
+family: epilogue
+summary: "ordered BF16 projection epilogues and an opt-in standalone contiguous SiLU times up stream"
+stage: epilogue (fused by default, with an opt-in standalone contiguous SiLU times up stream)
+entry_points:
+  - module: atlas_epilogue
+    function: Epilogue
+    parameters: "m, n, output_offset, steps, output_dtype, output_scale_exponent, output_layout, scratch_registers, output_row_stride, output_column_tile"
+  - module: atlas_epilogue
+    function: Step
+    parameters: "op, operand=None"
+  - module: atlas_epilogue
+    function: TileInput
+    parameters: "offset, layout, dtype, scale_exponent"
+  - module: atlas_resident_output
+    function: retain_output
+    parameters: "epilogue, output_reg"
+  - module: atlas_swiglu_stream
+    function: assembly
+    parameters: "elements, dram_base=0x90000000"
+  - module: atlas_swiglu_stream
+    function: layout
+    parameters: "elements"
+ops: [aten.add.Tensor, aten.mul.Tensor, aten.relu, aten.exp, aten.reciprocal, aten.silu, aten.gelu (tanh), connector scale]
+step_ops: [add, add_rne, mul, relu, exp, recip, silu, gelu_tanh, connector_scale]
+dtypes:
+  input: bf16 tiles from MXU0
+  operand: bf16 tiles or per-channel bf16
+  output: bf16 or fp8_e4m3
+constraints:
+  scratch: two free scalar registers; checked_assembly rejects any overlap with the recipe
+select:
+  - op: aten.silu after aten.linear
+    dtype: bf16
+    shape: any projection_gemm shape
+    variant: "Step(\"silu\")"
+  - op: aten.mul after aten.linear
+    dtype: "bf16 -> fp8_e4m3"
+    shape: any projection_gemm shape
+    variant: "Step(\"mul\", TileInput) with output_dtype=\"fp8\""
+  - op: aten.add.Tensor residual after aten.linear
+    dtype: bf16
+    shape: any projection_gemm shape
+    variant: "Step(\"add_rne\", TileInput)"
+models:
+  - model: tinyllama
+    use: "SiLU on gate_proj, up x gate with FP8 output for down_proj, exact residual add after o_proj and down_proj (prefill)"
+  - model: smolvla
+    use: "vision fc1 bias and tanh GELU with FP8 output, connector scale (through smol_fusion)"
+  - model: resnet50
+    use: "captured mul, add, and relu hooks through legacy_epilogue_assembly"
+generator: "make gen-epilogue ARGS=\"--shape MxKxN --steps silu[,mul,...] [--fp8]\""
+tests: [tests/test_swiglu_stream.py, ../../lib/tests/test_kernel_manifests.py, ../../lib/tests/test_kernel_bench.py, ../../coverage/tests/test_bench_model.py, ../projection_gemm/tests/test_program_checks.py, ../projection_gemm/tests/test_program_legacy_epilogue.py]
+checks: [checked_assembly hook footprint, TinyLlama fused launches executed on npu_model 47b8599 numerics=rtl in atlas-mlir export]
+run_tests: "make test-epilogue test-lib test-projection_gemm test-coverage NPU_MODEL=<npu_model 47b8599 checkout>"
+
+standalone_swiglu:
+  opt_in_only: true
+  command: "make gen-epilogue ARGS=\"--swiglu-elements COUNT\""
+  inputs: "finite contiguous BF16 gate and up buffers, sharing the same lane order"
+  tail: "zero pad only the last 1024-element chunk; layout(elements) gives all arena offsets and guards"
+  output: "contiguous BF16 in the input lane order, including zero padded tail"
+  vmem_bytes: 4096
+  numerical_policy: "existing RTL EXP/RCP lookup tables, truncating denominator addition, RNE products; not exact host SiLU"
+  admission: "positive element count, finite operands, zero padded tail, aligned non-overlapping guarded arena in the low32 DMA window"
+  model_gate: "requires independent full-action acceptance before any model enables this optional primitive"
