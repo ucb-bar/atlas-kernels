@@ -128,12 +128,26 @@ def mask_pattern(hint, rows, keys):
 
 def attention_params(row, hint):
     out = row['outputs'][0][0]
+    if len(out) != 4:
+        raise ValueError('attention benchmark requires a rank-four output')
     if row['op'] == 'aten.scaled_dot_product_attention.default':
-        (_, heads, rows, head_dim), key_shape = row['inputs'][0][0], row['inputs'][1][0]
+        shapes = [item[0] for item in row['inputs'][:3]]
+        if len(shapes) != 3 or any(len(shape) != 4 for shape in shapes):
+            raise ValueError('attention benchmark requires rank-four Q, K, and V')
+        query_shape, key_shape, value_shape = shapes
+        if len({shape[0] for shape in (*shapes, out)}) != 1:
+            raise ValueError('attention Q, K, V, and output batch sizes must match')
+        if key_shape != value_shape or query_shape[3] != key_shape[3] or query_shape != out:
+            raise ValueError('attention Q, K, V, and output geometry is incompatible with the benchmark')
+        _, heads, rows, head_dim = query_shape
         keys, kv_heads = key_shape[2], hint.get('kv_heads', key_shape[1])
     else:
+        if any(len(item[0]) == 4 and item[0][0] != out[0] for item in row['inputs']):
+            raise ValueError('attention input and output batch sizes must match')
         _, heads, rows, keys = out
         kv_heads, head_dim = hint.get('kv_heads', heads), hint.get('head_dim', 64)
+    if out[0] != 1:
+        raise ValueError(f'attention benchmark supports batch size 1 only; got {out[0]}')
     mask = hint.get('mask', 'none')
     params = dict(rows=rows, keys=keys, heads=heads, kv_heads=kv_heads, head_dim=head_dim, mask=mask,
                   output_fp8=bool(hint.get('output_fp8', False)))

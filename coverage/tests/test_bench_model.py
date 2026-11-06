@@ -114,6 +114,42 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(bench_model.panels(177, 720, 720, {'panel_rows': 128}),
                          {(128, 128, 736, 736, 720, 720): 1, (49, 64, 736, 736, 720, 720): 1})
 
+    def test_attention_batch_and_qkv_geometry(self):
+        row = dict(phase='inference', module='attention', op='aten.scaled_dot_product_attention.default',
+                   inputs=[[[1, 4, 32, 64], 'float32'], [[1, 2, 32, 64], 'float32'],
+                           [[1, 2, 32, 64], 'float32']], outputs=[[[1, 4, 32, 64], 'float32']],
+                   count=3, flops_each=32768, where='atlas:attention',
+                   launch={'family': 'attention', 'per': {'op': 'aten.scaled_dot_product_attention.default'}})
+        launch, = bench_model.plan({'atlas_rows': [row]})[0]
+        self.assertEqual(launch['count'], 3)
+        self.assertEqual((launch['params']['heads'], launch['params']['kv_heads']), (4, 2))
+        batched = copy.deepcopy(row)
+        for item in batched['inputs'] + batched['outputs']:
+            item[0][0] = 2
+        with self.assertRaisesRegex(ValueError, 'batch size 1 only; got 2'):
+            bench_model.plan({'atlas_rows': [batched]})
+        for operand in range(4):
+            with self.subTest(batch_mismatch=operand):
+                invalid = copy.deepcopy(row)
+                (invalid['inputs'] + invalid['outputs'])[operand][0][0] = 2
+                with self.assertRaisesRegex(ValueError, 'batch sizes must match'):
+                    bench_model.plan({'atlas_rows': [invalid]})
+        for operand, axis in ((0, 3), (1, 2), (2, 1), (2, 3), (3, 2)):
+            with self.subTest(geometry_mismatch=(operand, axis)):
+                invalid = copy.deepcopy(row)
+                (invalid['inputs'] + invalid['outputs'])[operand][0][axis] += 1
+                with self.assertRaisesRegex(ValueError, 'geometry is incompatible'):
+                    bench_model.plan({'atlas_rows': [invalid]})
+
+    def test_decomposed_attention_rejects_batch_and_mismatches(self):
+        row = dict(op='aten.softmax.int', inputs=[[[2, 4, 32, 32], 'float32']],
+                   outputs=[[[2, 4, 32, 32], 'float32']])
+        with self.assertRaisesRegex(ValueError, 'batch size 1 only; got 2'):
+            bench_model.attention_params(row, {})
+        row['outputs'][0][0][0] = 1
+        with self.assertRaisesRegex(ValueError, 'batch sizes must match'):
+            bench_model.attention_params(row, {})
+
     def test_rows_without_a_launch_are_reported(self):
         model = toy_model()['models']['toy']
         orphan = dict(model['atlas_rows'][1], op='aten.mul.Tensor', launch=None, where='atlas:epilogue')
