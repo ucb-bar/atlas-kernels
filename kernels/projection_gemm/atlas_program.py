@@ -1,10 +1,12 @@
 """Bounded contraction assembly and source-bundle admission."""
 
 from pathlib import Path
+from atlas_kernels_path import module_path
 from atlas_program_checks import checked_assembly
 from atlas_path_guard import checked as safe_path
 from atlas_tooling import sha256
 from run_model_tile import validate_archive_members
+import run_model_tile
 import zipfile
 
 
@@ -178,12 +180,19 @@ def preflight_bundle(args):
         validate_archive_members(archive.infolist())
 
 
-def code_sources(*, traffic_reuse=False):
+def source_paths(*, traffic_reuse=False):
+    """Receipt source names mapped to library files and the imported host helper."""
     names = ("atlas_program.py", "atlas_program_checks.py", "atlas_epilogue.py", "atlas_rne_add.py", "atlas_resnet_input.py",
              "atlas_program_reuse_common.py", "run_model_tile.py", "atlas_tile_arithmetic.py", "atlas_weight_source.py")
     if _reuse_enabled(traffic_reuse):
         names += tuple(module + ".py" for module in dict.fromkeys(_TRAFFIC_REUSE_MODULES.values()))
-    return {name: sha256(Path(__file__).with_name(name)) for name in names}
+    return {name: Path(run_model_tile.__file__) if name == "run_model_tile.py" else module_path(name)
+            for name in names}
+
+
+def code_sources(*, traffic_reuse=False):
+    """Receipt source names mapped to SHA-256 digests of the files in use."""
+    return {name: sha256(path) for name, path in source_paths(traffic_reuse=traffic_reuse).items()}
 
 
 def legacy_epilogue_assembly(m, k, n, output_offset, rescale_exponent, *, epilogue=None, direct_input=None, weight_source=None):
