@@ -14,6 +14,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 MODELS = ('tinyllama', 'smolvla')
+VARIANTS = ('smol-projection-results', 'tiny-fused-results')
 DOCUMENT_FIELDS = ('model', 'coverage', 'coverage_sha256', 'coverage_status', 'workers',
                    'launch_checks', 'unmapped', 'uncovered', 'npu_model')
 ROW_FIELDS = ('key', 'family', 'params', 'count', 'flops', 'modules', 'dtypes', 'phases',
@@ -65,22 +66,50 @@ def verify(data, expected, label):
         raise ValueError(f'{label}: byte length or SHA-256 mismatch')
 
 
-def recover(model, out, repo=ROOT):
-    directory = ROOT / 'coverage' / 'examples' / model
-    manifest = json.loads((directory / 'MODEL-BENCH.artifact.json').read_text())
+def artifact_bytes(manifest, repo, label):
     source = manifest['git']
     try:
         blob = subprocess.run(
             ['git', '-C', str(repo), 'rev-parse', f"{source['commit']}:{source['path']}"],
             check=True, capture_output=True, text=True).stdout.strip()
         if blob != source['blob']:
-            raise ValueError(f'{model}: Git blob identity mismatch')
+            raise ValueError(f'{label}: Git blob identity mismatch')
         data = subprocess.run(['git', '-C', str(repo), 'cat-file', 'blob', blob],
                               check=True, capture_output=True).stdout
     except subprocess.CalledProcessError as error:
-        raise ValueError(f"{model}: historical Git objects unavailable; fetch commit "
+        raise ValueError(f"{label}: historical Git objects unavailable; fetch commit "
                          f"{source['commit']} from your atlas-kernels remote") from error
-    verify(data, manifest['artifact'], model)
+    verify(data, manifest['artifact'], label)
+    return data
+
+
+def write_artifact(target, data):
+    # Never silently overwrite a locally modified evidence artifact.
+    if target.exists() and target.read_bytes() != data:
+        raise FileExistsError(f'{target}: existing artifact differs')
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(data)
+
+
+def summarize_variant(document):
+    return {key: value for key, value in document.items() if key not in
+            ('compiler_tools', 'traces', 'rtl_receipt', 'compiler_functional_joins', 'rtl')}
+
+
+def recover_variant(name, out, repo=ROOT):
+    manifest = json.loads((ROOT / 'coverage' / f'{name}.json').read_text())
+    data = artifact_bytes(manifest, repo, name)
+    if summarize_variant(json.loads(data)) != manifest['summary']:
+        raise ValueError(f'{name}: compact measurements differ from full artifact')
+    target = out / 'variants' / f'{name}.json'
+    write_artifact(target, data)
+    return target
+
+
+def recover(model, out, repo=ROOT):
+    directory = ROOT / 'coverage' / 'examples' / model
+    manifest = json.loads((directory / 'MODEL-BENCH.artifact.json').read_text())
+    data = artifact_bytes(manifest, repo, model)
     summary_data = (directory / 'MODEL-BENCH.summary.json').read_bytes()
     verify(summary_data, manifest['summary'], f'{model} summary')
     summary = json.loads(summary_data)
@@ -88,11 +117,7 @@ def recover(model, out, repo=ROOT):
         raise ValueError(f'{model}: compact measurements differ from full artifact')
     destination = out / model
     target = destination / 'MODEL-BENCH.json'
-    # Never silently overwrite a locally modified evidence artifact.
-    if target.exists() and target.read_bytes() != data:
-        raise FileExistsError(f'{target}: existing artifact differs')
-    destination.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(data)
+    write_artifact(target, data)
     for name in ('MODEL-BENCH.artifact.json', 'MODEL-BENCH.summary.json'):
         (destination / name).write_bytes((directory / name).read_bytes())
     return summary, destination
@@ -109,6 +134,8 @@ def main(argv=None):
         report = render(summary).replace('(../../EVIDENCE.md)', f'({instructions})')
         (destination / 'MODEL-BENCH.md').write_text(report)
         print(f'{model}: authenticated JSON and report in {destination}')
+    for name in VARIANTS:
+        print(f'{name}: authenticated JSON in {recover_variant(name, args.out)}')
 
 
 if __name__ == '__main__':

@@ -15,6 +15,19 @@ import evidence
 
 
 class EvidenceTest(unittest.TestCase):
+    def test_variant_measurements_match_authenticated_receipts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            for name in evidence.VARIANTS:
+                with self.subTest(variant=name):
+                    target = evidence.recover_variant(name, output)
+                    manifest = json.loads((COVERAGE / f'{name}.json').read_text())
+                    self.assertEqual(evidence.summarize_variant(json.loads(target.read_bytes())),
+                                     manifest['summary'])
+                    target.write_bytes(target.read_bytes() + b' ')
+                    with self.assertRaisesRegex(FileExistsError, 'existing artifact differs'):
+                        evidence.recover_variant(name, output)
+
     def test_recovered_reports_preserve_every_historical_table_row(self):
         expected = {'tinyllama': (26, 1038, 13, 3537507930),
                     'smolvla': (28, 2915, 23, 5160679740)}

@@ -57,4 +57,4 @@ Pinned RTL `0079c0541111197741a231c002e3843fa6f545b2` confirms the complete reta
 
 Resumed `make test` passes 271 invocations across 10 suites with 0 skips under the Track H recipe and INTEG2 Release tools. The explicit citation check also passes. The prior final run passed 271 invocations with 0 skips. Independent review found no blocking source defects.
 
-The [compact result manifest](../../coverage/tiny-fused-results.json) joins measured facts and receipt digests. Raw assembly, arenas, binary programs, logs, and detailed joins remain in the KOPT3 work-area `out/` directory. Default generators and pinned source modules remain byte-identical to local base `2568421`.
+The [result manifest](../../coverage/tiny-fused-results.json) retains measured facts and receipt digests. `make evidence` recovers the authenticated full receipt, including compiler joins, tool identities, and RTL provenance; see [recovery instructions](../../coverage/EVIDENCE.md).
