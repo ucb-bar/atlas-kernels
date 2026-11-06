@@ -25,8 +25,6 @@ import time
 SCHEMA = 'atlas.coverage.inventory.v2'
 SKIP = {'aten._assert_tensor_metadata.default', 'aten._assert_scalar.default', 'aten.lift_fresh_copy.default',
         'aten.detach_.default', 'aten.alias.default', 'aten.dropout.default', '<built-in function getitem>'}
-MATMUL = {'aten.linear.default', 'aten.matmul.default', 'aten.bmm.default', 'aten.mm.default',
-          'aten.conv2d.default', 'aten.conv2d.padding', 'aten.scaled_dot_product_attention.default'}
 PROJECTION = ('aten.linear.default', 'aten.conv2d.default', 'aten.conv2d.padding')
 ATTENTION = ('aten.softmax.int', 'aten.scaled_dot_product_attention.default')
 LAYOUT = {'view', 'reshape', 'transpose', 'permute', 'unsqueeze', 'squeeze', 'expand', 'expand_as', 'slice',

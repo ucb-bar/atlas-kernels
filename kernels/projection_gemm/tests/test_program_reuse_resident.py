@@ -15,7 +15,6 @@ import atlas_program_reuse_tiny as tiny
 import atlas_program_reuse_tiny_breadth as breadth
 from atlas_program_reuse_resident import admission, assembly, dma_load_bytes
 from reuse_proof import prove
-from reuse_proof import prove as prove_program
 
 
 class ResidentReuseTests(unittest.TestCase):
@@ -121,7 +120,7 @@ OUTPUT = 4456704
 
 
 def prove_tiny(source, exponent=-14):
-    return prove_program(source, *SHAPE, exponent)
+    return prove(source, *SHAPE, exponent)
 
 
 class TinyReuseTests(unittest.TestCase):
